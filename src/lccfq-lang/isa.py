@@ -1,5 +1,5 @@
 """
-Filename: isa.py
+Filename: arch.py
 Author: Santiago Nunez-Corrales
 Date: 2025-05-01
 Version: 1.0

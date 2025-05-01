@@ -13,6 +13,7 @@ Contact: nunezco2@illinois.edu
 import toml
 from enum import Enum
 from dataclasses import dataclass
+from typing import List
 from .topology import Topology
 
 
@@ -32,15 +33,21 @@ class QPUStatus(Enum):
 
 
 @dataclass
+class QPUConnection:
+    ip: str
+    port: int
+
+
+@dataclass
 class QPUConfig:
     """Representation of the configuration that a QPU requires to operate inside LCCF.
     """
     name: str
     location: str
     qubit_count: int
+    native_gates: List[str]
     topology: Topology
-    ip: str
-    port: int
+    connection: QPUConnection
 
 
 class QPU:
@@ -54,10 +61,44 @@ class QPU:
     def __init__(self,
                 filename: str=None
                  ):
-
+        #Load the configuration and establish the bridge
         self.config = self.__from_file(filename)
+        self.__bridge()
+
+        # Use the
+        self.transpiler = None #TODO: have a selector based on native gate set
 
     def __from_file(self,
-                  filename: str) -> QPUConfig:
-        pass
+                    filename: str) -> QPUConfig:
+        data = toml.load(filename)
 
+        qpu_data = data["qpu"]
+        topology_data = data["topology"]
+        network_data = data["network"]
+
+        topology = Topology(
+            name=topology_data["name"],
+            qubits=topology_data["qubits"],
+            connections=topology_data["connections"]
+        )
+
+        connection = QPUConnection(
+            ip=network_data["ip"],
+            port=network_data["port"]
+        )
+
+        return QPUConfig(
+            name=qpu_data["name"],
+            location=qpu_data["location"],
+            qubit_count=qpu_data["qubit_count"],
+            native_gates=qpu_data["native_gateset"],
+            topology=topology,
+            connection=connection
+        )
+
+    def __bridge(self):
+        """
+        Use ZMQ to connect this program instance to a specific communication queue.
+        :return: Nothing
+        """
+        pass

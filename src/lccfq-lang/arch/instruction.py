@@ -17,6 +17,8 @@ from typing import Set
 from .preconds import Precondition
 from .postconds import Postcondition
 from ..backend import QPU
+from typing import List
+
 
 class InstructionType(Enum):
     """InstructionType describes the main classes of instructions in LCCF code
@@ -48,9 +50,21 @@ class Instruction(ABC):
         self.pre: Set[Precondition] = set()
         self.post: Set[Postcondition] = set()
 
-    def transpile(self, qpu: QPU):
-        """
-        Transpile a
+    def add_precondition(self,
+                         precondition: Precondition) -> None:
+        """Add a callable precondition to this instruction.
+
+        :param precondition:
         :return:
+        """
+        self.pre.add(precondition)
+
+    def transpile(self,
+                  ngs: List[str]):
+        """
+        Transpile an instruction into the native gate set
+
+        :return: A list of tuples containing native gate symbols,
+                 target qubits, pre- and post-conditions.
         """
         pass
