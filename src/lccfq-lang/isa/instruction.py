@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Set
 from .preconds import Precondition
 from .postconds import Postcondition
+from ..backend import QPU
 
 class InstructionType(Enum):
     """InstructionType describes the main classes of instructions in LCCF code
@@ -47,5 +48,9 @@ class Instruction(ABC):
         self.pre: Set[Precondition] = set()
         self.post: Set[Postcondition] = set()
 
-    def exec(self):
+    def transpile(self, qpu: QPU):
+        """
+        Transpile a
+        :return:
+        """
         pass

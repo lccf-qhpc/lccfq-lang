@@ -11,5 +11,12 @@ License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
 
+from dataclasses import dataclass
+from typing import List, Set
+
+
+@dataclass
 class Topology:
-    pass
+    name: str
+    qubits: Set[int]
+    connections: List[List[int]]
