@@ -14,11 +14,7 @@ from dataclasses import dataclass
 
 
 # Static data
-from .mach.transpilers import XYiSW
-
-transpilers = {
-    "pfaff_v1": XYiSW
-}
+from .mach.transpilers import TranspilerFactory
 
 
 @dataclass
@@ -32,5 +28,5 @@ class Paths:
 
 @dataclass
 class Mach:
-    transpiler: transpilers["pfaff_v1"]
+    transpiler: str = TranspilerFactory().get("pfaff_v1")
 

@@ -9,12 +9,20 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
+from abc import ABC, abstractmethod
 from typing import List
 from .ir import Gate
 from ..arch.instruction import Instruction
 
 
-class XYiSW:
+class Transpiler(ABC):
+
+    @abstractmethod
+    def transpile(self, instruction: Instruction) -> List[Gate]:
+        pass
+
+
+class XYiSW(Transpiler):
     """Transpilation class for Pfaff Lab hardware.
     """
 
@@ -26,3 +34,26 @@ class XYiSW:
         :return: A list of gates implementing that instruction.
         """
         pass
+
+
+class TranspilerFactory:
+    """A transpiler factory that selects a specific transpiler based on
+    specification of a machine.
+    """
+
+    # Internal set of transpiler choices
+    __transpilers = {
+        "pfaff_v1": XYiSW
+    }
+
+    def __init__(self):
+        # Reserved for future stateful use
+        pass
+
+    def get(self, mach: str):
+        """Get the specific transpiler for the right architecture.
+
+        :param mach: name of the architecture.
+        :return: the transpiler object.
+        """
+        return self.__transpilers[mach]

@@ -15,6 +15,8 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import List
 from .topology import Topology
+from .defaults import Mach
+from .mach.transpilers import TranspilerFactory
 
 
 class QPUStatus(Enum):
@@ -60,16 +62,19 @@ class QPU:
 
     def __init__(self,
                 filename: str=None
-                 ):
+                ):
         #Load the configuration and establish the bridge
         self.config = self.__from_file(filename)
         self.__bridge()
 
-        # Use the
-        self.transpiler = None #TODO: have a selector based on native gate set
+        # Check that we at least have a default transpiler
+        if self.config.name is None:
+            self.transpiler = Mach.transpiler
+        else:
+            self.transpiler = TranspilerFactory().get(self.config.name)
 
-    def __from_file(self,
-                    filename: str) -> QPUConfig:
+    @staticmethod
+    def __from_file(filename: str) -> QPUConfig:
         data = toml.load(filename)
 
         qpu_data = data["qpu"]
