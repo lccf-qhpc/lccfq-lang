@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 
 # Static data
-from .mach import XYiSW
+from .mach.transpilers import XYiSW
 
 transpilers = {
     "pfaff_v1": XYiSW
