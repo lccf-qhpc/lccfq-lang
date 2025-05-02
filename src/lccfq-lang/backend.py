@@ -9,14 +9,18 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
-
 import toml
+
 from enum import Enum
 from dataclasses import dataclass
 from typing import List
-from .topology import Topology
 from .defaults import Mach
+from .mach.topology import QPUTopology
 from .mach.transpilers import TranspilerFactory
+from .arch.preconds import Precondition
+from .arch.postconds import Postcondition
+from .arch.instruction import Instruction
+from .arch.circuit import Circuit
 
 
 class QPUStatus(Enum):
@@ -48,7 +52,9 @@ class QPUConfig:
     location: str
     qubit_count: int
     native_gates: List[str]
-    topology: Topology
+    qubits: List[int]
+    exclusions: List[int]
+    topology: QPUTopology
     connection: QPUConnection
 
 
@@ -81,7 +87,7 @@ class QPU:
         topology_data = data["topology"]
         network_data = data["network"]
 
-        topology = Topology(
+        topology = QPUTopology(
             name=topology_data["name"],
             qubits=topology_data["qubits"],
             connections=topology_data["connections"]
@@ -97,6 +103,8 @@ class QPU:
             location=qpu_data["location"],
             qubit_count=qpu_data["qubit_count"],
             native_gates=qpu_data["native_gateset"],
+            qubits=qpu_data["qubits"],
+            exclusions=qpu_data["exclusions"],
             topology=topology,
             connection=connection
         )
@@ -106,4 +114,31 @@ class QPU:
         Use ZMQ to connect this program instance to a specific communication queue.
         :return: Nothing
         """
+        pass
+
+    def __check_precon(self, precon: Precondition) -> bool:
+        """Check whether a precondition is met
+
+        :param precon: precondition to meet prior to instruction execution
+        :return: validity of precondition under current QPU state
+        """
+        pass
+
+    def __check_postcon(self, precon: Postcondition) -> bool:
+        """Check whether a precondition is met
+
+        :param postcon: postcondition the QPU must meet to consider validity
+               of execution
+        :return: validity of postcondition after QPU state altered by instruction
+        """
+        pass
+
+    def exec_single(self, instruction: Instruction):
+        """Execute a single instruction.
+        :param instruction: instruction to execute
+        :return: Nothing"""
+        pass
+
+    def circuit(self, circuit: Circuit):
+        """"""
         pass

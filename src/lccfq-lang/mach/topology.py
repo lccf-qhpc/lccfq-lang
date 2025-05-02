@@ -16,7 +16,13 @@ from typing import List, Set
 
 
 @dataclass
-class Topology:
+class QPUTopology:
     name: str
     qubits: Set[int]
     connections: List[List[int]]
+
+
+class TopologyManager:
+    """A manager for common topology operations.
+    """
+    pass

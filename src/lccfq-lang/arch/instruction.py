@@ -38,13 +38,23 @@ class Instruction(ABC):
                  symbol: str,
                  instruction_type:InstructionType,
                  is_native: bool = False,
-                 has_effects: bool = True
+                 has_effects: bool = True,
+                 is_controlled: bool = False,
+                 target_qubits: List[int] = None,
+                 control_qubits: List[int] = None,
+                 parameters: List[float] = None,
+                 shots: int = None,
                  ):
         # Basis properties of an instruction
         self.symbol = symbol
         self.instruction_type = instruction_type
         self.is_native = is_native
         self.has_effects = has_effects
+        self.is_controlled = is_controlled
+        self.target_qubits = target_qubits
+        self.control_qubits = control_qubits
+        self.parameters = parameters
+        self.shots = shots
 
         # Pre- and post-conditions of the hoare triplet
         self.pre: Set[Precondition] = set()
@@ -58,13 +68,3 @@ class Instruction(ABC):
         :return:
         """
         self.pre.add(precondition)
-
-    def transpile(self,
-                  ngs: List[str]):
-        """
-        Transpile an instruction into the native gate set
-
-        :return: A list of tuples containing native gate symbols,
-                 target qubits, pre- and post-conditions.
-        """
-        pass

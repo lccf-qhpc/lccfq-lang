@@ -7,6 +7,7 @@ native_gates = ["X", "Y", "SQISWAP"]
 [topology]
 type = "linear"
 qubits = [0,1,2,3]
+exclusions = [3]
 connections = [[0,1], [1,2], [2,3]]
 
 [network]

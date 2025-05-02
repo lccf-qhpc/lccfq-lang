@@ -12,10 +12,24 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
+from .instruction import Instruction
 from typing import List
 
 
 class Circuit:
-    """Implementation of a quantum circuit.
+    """Implementation of a quantum circuit based on instructions.
     """
-    pass
+
+    def __init__(self,
+                 shots: int = 1000):
+        self.shots = shots
+        self.operations: List[Instruction] = list()
+
+    def add(self,
+            instruction: Instruction):
+        """Add an instruction to the circuit.
+
+        :param instruction: The instruction to add to the circuit.
+        :return: Nothing.
+        """
+        self.operations.append(instruction)
