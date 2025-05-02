@@ -1,5 +1,5 @@
 [qpu]
-name = "LCCF-QPU-1"
+name = "pfaff_v1"
 location = "Pfaff Lab"
 qubit_count = 4
 native_gates = ["X", "Y", "SQISWAP"]
