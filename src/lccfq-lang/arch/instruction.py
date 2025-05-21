@@ -51,6 +51,7 @@ class Instruction(ABC):
         self.is_native = is_native
         self.has_effects = has_effects
         self.is_controlled = is_controlled
+        self.is_mapped = False
         self.target_qubits = target_qubits
         self.control_qubits = control_qubits
         self.parameters = parameters
@@ -68,3 +69,12 @@ class Instruction(ABC):
         :return:
         """
         self.pre.add(precondition)
+
+    def add_postcondition(self,
+                         postcondition: Postcondition) -> None:
+        """Add a callable precondition to this instruction.
+
+        :param postcondition:
+        :return:
+        """
+        self.post.add(postcondition)
