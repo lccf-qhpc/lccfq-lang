@@ -25,7 +25,7 @@ class InstructionType(Enum):
     users will issue to a QPU.
     """
     CIRCUIT = 1
-    STATE = 2
+    CONTROL = 2
     BENCHMARK = 3
 
 
