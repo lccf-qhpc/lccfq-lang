@@ -1,5 +1,5 @@
 """
-Filename: single_nopar_gates_test.py
+Filename: single_par_gates_test.py
 Author: Santiago Nunez-Corrales
 Date: 2025-05-01
 Version: 1.0
