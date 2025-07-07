@@ -1,5 +1,5 @@
 [project]
-name = "lccfq-lang"
+name = "lccfq_lang"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -7,3 +7,13 @@ requires-python = ">=3.12"
 dependencies = [
     "toml>=0.10.2",
 ]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
