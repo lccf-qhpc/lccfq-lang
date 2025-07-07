@@ -52,7 +52,7 @@ class Instruction(ABC):
         self.symbol = symbol
         self.instruction_type = InstructionType.DELAYED
         self.is_native = is_native
-        self.has_effects = modifies_state
+        self.modifies_state = modifies_state
         self.is_controlled = is_controlled
         self.is_mapped = False
         self.target_qubits = target_qubits

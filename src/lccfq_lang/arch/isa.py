@@ -9,7 +9,7 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
-from instruction import Instruction
+from lccfq_lang.arch.instruction import Instruction
 
 
 def sq_nopar_gates(gate_names):
@@ -21,9 +21,9 @@ def sq_nopar_gates(gate_names):
     def decorator(cls):
         for name in gate_names:
             def mk_sg_method(gate_name):
-                def sg_method(self, tg: int, shots=None) -> Instruction:
+                def sg_method(self, tg: int = 0, shots=None) -> Instruction:
                     return Instruction(
-                        gate_name,
+                        symbol=gate_name,
                         is_native=False,
                         modifies_state=False,
                         is_controlled=False,
