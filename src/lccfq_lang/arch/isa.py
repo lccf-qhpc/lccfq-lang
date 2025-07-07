@@ -87,7 +87,7 @@ def tqc_nopar_gates(gate_names):
     def decorator(cls):
         for name in gate_names:
             def mk_sg_method(gate_name):
-                def sg_method(self, tg: int = 0, ct: int = 1, shots=None) -> Instruction:
+                def sg_method(self, ct: int = 1, tg: int = 0, shots=None) -> Instruction:
                     return Instruction(
                         symbol=gate_name,
                         is_native=False,
@@ -117,7 +117,7 @@ def tqc_par_gates(gate_names):
     def decorator(cls):
         for name in gate_names:
             def mk_sg_method(gate_name):
-                def sg_method(self, tg: int = 0, ct: int = 1, params=None, shots=None) -> Instruction:
+                def sg_method(self, ct: int = 1, tg: int = 0, params=None, shots=None) -> Instruction:
                     return Instruction(
                         symbol=gate_name,
                         is_native=False,
@@ -136,6 +136,8 @@ def tqc_par_gates(gate_names):
         return cls
 
     return decorator
+
+
 
 @sq_nopar_gates([ "x", "y", "z", "h", "s", "sdg", "t", "tdg" ])
 @sq_par_gates(["p", "rx", "ry", "rz", "phase", "u2", "u3"])
@@ -165,6 +167,25 @@ class ISA:
             modifies_state=False,
             is_controlled=False,
             target_qubits=[tg_a, tg_b],
+            control_qubits=None,
+            parameters=None,
+            shots=None,
+        )
+
+    def id(self, tgs=None) -> Instruction:
+        """
+        The identity instruction is quite peculiar in the sense that it is fungible, and can be used for
+        various formal properties.
+
+        :param tg: target qubits
+        :return: an identity instruction
+        """
+        return Instruction(
+            symbol="id",
+            is_native=False,
+            modifies_state=False,
+            is_controlled=False,
+            target_qubits=tgs,
             control_qubits=None,
             parameters=None,
             shots=None,

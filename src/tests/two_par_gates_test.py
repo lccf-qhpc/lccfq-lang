@@ -22,16 +22,16 @@ def test_tqcg_par_gen(gate):
     instr = None
 
     if gate == "cu":
-        instr = method(tg=0, ct = 1, params=[0.0, 0.1, 0.2, 0.3], shots=1)
+        instr = method(ct = 0, tg=1, params=[0.0, 0.1, 0.2, 0.3], shots=1)
     else:
-        instr = method(tg=0, ct = 1, params=[0.0], shots=1)
+        instr = method(ct = 0, tg=1, params=[0.0], shots=1)
 
     assert isinstance(instr, Instruction)
     assert instr.symbol == gate
     assert instr.is_native is False
     assert instr.modifies_state is False
     assert instr.is_controlled is True
-    assert instr.target_qubits == [0]
-    assert instr.control_qubits == [1]
+    assert instr.target_qubits == [1]
+    assert instr.control_qubits == [0]
     assert instr.parameters == [0.0] or instr.parameters == [0.0, 0.1, 0.2, 0.3]
     assert instr.shots == 1

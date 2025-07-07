@@ -18,14 +18,14 @@ from lccfq_lang.arch.instruction import Instruction
 def test_tqcg_no_par_gen(gate):
     isa = ISA("lccfq")
     method = getattr(isa, gate)
-    instr = method(tg=0, ct = 1, shots=1)
+    instr = method(ct = 0, tg=1, shots=1)
 
     assert isinstance(instr, Instruction)
     assert instr.symbol == gate
     assert instr.is_native is False
     assert instr.modifies_state is False
     assert instr.is_controlled is True
-    assert instr.target_qubits == [0]
-    assert instr.control_qubits == [1]
+    assert instr.target_qubits == [1]
+    assert instr.control_qubits == [0]
     assert instr.parameters is None
     assert instr.shots == 1
