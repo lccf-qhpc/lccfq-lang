@@ -21,3 +21,27 @@ class NotEnoughQubits(Exception):
     def __init__(self, expected, present):
         self.message = f"Not enough qubits available - expected: {expected} \tpresent: {present}"
         super().__init__(self.message)
+
+
+class BadParameterCount(Exception):
+    """Exception raised when an instruction does not fulfill its parameter count.
+
+    Attributes:
+        message -- explanation of the error
+    """
+
+    def __init__(self, expected, present):
+        self.message = f"Bad parameter count - expected: {expected}\tpresent: {present}"
+        super().__init__(self.message)
+
+
+class UndefinedParametricInstruction(Exception):
+    """Exception raised when an instruction does not fulfill its parameter count.
+
+    Attributes:
+        message -- explanation of the error
+    """
+
+    def __init__(self, instruction, expected, present):
+        self.message = f"No instruction with given parameters - inst: {instruction}\texpected: {expected}\tpresent: {present}"
+        super().__init__(self.message)

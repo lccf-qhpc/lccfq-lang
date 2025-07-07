@@ -65,7 +65,7 @@ class Instruction(ABC):
         self.post: Set[Postcondition] = set()
 
     def __repr__(self):
-        return f"{self.symbol} over {self.target_qubits} controlled by {self.control_qubits}"
+        return f"{self.symbol} over {self.target_qubits} ctrl by {self.control_qubits} w/ params={self.parameters}"
 
     def add_precondition(self,
                          precondition: Precondition) -> None:
