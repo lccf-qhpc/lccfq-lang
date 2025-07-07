@@ -16,14 +16,17 @@ from enum import Enum
 from typing import Set
 from .preconds import Precondition
 from .postconds import Postcondition
-from ..backend import QPU
 from typing import List
 
 
 class InstructionType(Enum):
     """InstructionType describes the main classes of instructions in LCCF code
     users will issue to a QPU.
+
+    An instruction type being delayed means that its use will be determined by its
+    context.
     """
+    DELAYED = 0
     CIRCUIT = 1
     CONTROL = 2
     BENCHMARK = 3
@@ -32,13 +35,13 @@ class InstructionType(Enum):
 class Instruction(ABC):
     """An Instruction models a mnemonic entity that has executable consequences in
     hardware connected to a QPU. Some instructions may not have a direct executable
-    effect, but modulate the execution of other instructions.
+    effect, but modulate the execution of other instructions. Instructions are
+    delayed by default.
     """
     def __init__(self,
                  symbol: str,
-                 instruction_type:InstructionType,
                  is_native: bool = False,
-                 has_effects: bool = True,
+                 modifies_state: bool = True,
                  is_controlled: bool = False,
                  target_qubits: List[int] = None,
                  control_qubits: List[int] = None,
@@ -47,9 +50,9 @@ class Instruction(ABC):
                  ):
         # Basis properties of an instruction
         self.symbol = symbol
-        self.instruction_type = instruction_type
+        self.instruction_type = InstructionType.DELAYED
         self.is_native = is_native
-        self.has_effects = has_effects
+        self.has_effects = modifies_state
         self.is_controlled = is_controlled
         self.is_mapped = False
         self.target_qubits = target_qubits
@@ -60,6 +63,9 @@ class Instruction(ABC):
         # Pre- and post-conditions of the hoare triplet
         self.pre: Set[Precondition] = set()
         self.post: Set[Postcondition] = set()
+
+    def __repr__(self):
+        return f"{self.symbol} over {self.target_qubits} controlled by {self.control_qubits}"
 
     def add_precondition(self,
                          precondition: Precondition) -> None:

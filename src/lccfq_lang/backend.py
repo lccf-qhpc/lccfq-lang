@@ -61,7 +61,7 @@ class QPUConfig:
 class QPU:
     """A `QPU` determines all interactions with the device through issuing circuit, control and benchmark
     instructions. Accessing the backend requires submitting requests through a REST interface. An HPC system
-    will run a single instance of the backend, which will communicate with lccfq-lang through this interface.
+    will run a single instance of the backend, which will communicate with lccfq_lang through this interface.
 
     New programs will always import this library.
     """
