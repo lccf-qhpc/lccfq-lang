@@ -41,7 +41,6 @@ def sq_nopar_gates(gate_names):
                 sg_method.__name__ = gate_name
                 return sg_method
 
-            # Bind the method to the class, not as a static function
             setattr(cls, name, mk_sg_method(name))
         return cls
 
@@ -73,7 +72,6 @@ def sq_par_gates(gate_names):
                 sg_method.__name__ = gate_name
                 return sg_method
 
-            # Bind the method to the class, not as a static function
             setattr(cls, name, mk_sg_method(name))
         return cls
 
@@ -104,7 +102,6 @@ def tqc_nopar_gates(gate_names):
                 sg_method.__name__ = gate_name
                 return sg_method
 
-            # Bind the method to the class, not as a static function
             setattr(cls, name, mk_sg_method(name))
         return cls
 
@@ -135,7 +132,6 @@ def tqc_par_gates(gate_names):
                 sg_method.__name__ = gate_name
                 return sg_method
 
-            # Bind the method to the class, not as a static function
             setattr(cls, name, mk_sg_method(name))
         return cls
 
