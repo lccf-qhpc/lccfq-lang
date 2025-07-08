@@ -25,7 +25,7 @@ def bell_state():
         c >> isa.cx(ct=0, tg=1)
         c >> isa.measure(tgs=[0, 1])
 
-    print(c.frequencies())
+    print(creg.frequencies())
 
 
 if __name__ == "__main__":
