@@ -16,7 +16,7 @@ from backend import QPU
 from .instruction import Instruction
 from .register import QRegister, CRegister
 from ..mach.ir import Gate, Control
-from typing import List
+from typing import List, Dict
 
 
 class Circuit:
@@ -28,23 +28,19 @@ class Circuit:
     """
 
     def __init__(self,
-                 qpu: QPU,
                  qreg: QRegister,
                  creg: CRegister,
                  shots: int = 1000):
         """Create a new circuit.
 
-        :param qpu: QPU instance to run this circuit
         :param qreg: quantum register
         :param creg: classical register
         :param shots: number of shot to run this circuit for
         """
-        self.qpu = qpu
         self.qreg = qreg
         self.creg = creg
         self.shots = shots
         self.operations: List[Instruction] = list()
-        self.results = None
 
     def generate(self) -> List[Gate|Control]:
         """Generate calls the machinery that expands and produces our IR for the LCCFQ
@@ -54,6 +50,12 @@ class Circuit:
         :return: List of gates and controls so far contained in the circuit.
         """
         return []
+
+    def results(self) -> Dict[str, int]:
+        return self.creg.data
+
+    def frequencies(self):
+        return self.creg.frequencies()
 
     def __rshift__(self, instr: Instruction):
         """Add a new instruction to the circuit using the `>>` operator. This
@@ -82,4 +84,4 @@ class Circuit:
         :return: none
         """
         program = self.generate()
-        self.result = self.qpu.exec_circuit(program)
+        self.creg.absorb(self.qreg.qpu.exec_circuit(program))

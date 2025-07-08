@@ -11,11 +11,16 @@ License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
 
-from lccfq_lang.backend import QPU
-from lccfq_lang.arch.register import QRegister, CRegister
+from .backend import QPU
+from .arch.register import QRegister, CRegister
+from .arch.circuit import Circuit
+from .arch.isa import ISA
+
 
 __all__ = [
     QPU,
     QRegister,
     CRegister,
+    Circuit,
+    ISA
 ]

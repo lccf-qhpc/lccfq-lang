@@ -9,7 +9,8 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
-from typing import List
+from typing import List, Dict
+from .error import NoMeasurementsAvailable
 from ..backend import QPU
 from .instruction import Instruction
 
@@ -53,10 +54,24 @@ class QRegister:
 
 
 class CRegister:
-    """A classical register implementation
+    """A classical register implementation. Internally, a register should
+    operate as an ensemble obtained from a measurement.
     """
 
     def __init__(self, size: int):
-        self.bitcount = size
+        self.bit_count = size
+        self.data = None
 
+    def absorb(self, data: Dict[str, int]):
+        self.data = data
 
+    def frequencies(self):
+        if self.data is None:
+            raise NoMeasurementsAvailable()
+
+        total = sum(self.data.values())
+
+        if total == 0:
+            return {k: 0.0 for k in self.data}
+
+        return {k: v / total for k, v in self.data.items()}

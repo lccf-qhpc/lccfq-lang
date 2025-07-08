@@ -22,6 +22,17 @@ class NotEnoughQubits(Exception):
         self.message = f"Not enough qubits available - expected: {expected} \tpresent: {present}"
         super().__init__(self.message)
 
+class NoMeasurementsAvailable(Exception):
+    """Exception raised when the QPU topology not the correct one.
+
+    Attributes:
+        message -- explanation of the error
+    """
+
+    def __init__(self):
+        self.message = f"No measurements available yet in the current classical register"
+        super().__init__(self.message)
+
 
 class BadParameterCount(Exception):
     """Exception raised when an instruction does not fulfill its parameter count.
