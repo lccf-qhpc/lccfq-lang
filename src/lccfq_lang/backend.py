@@ -14,13 +14,13 @@ import toml
 from enum import Enum
 from dataclasses import dataclass
 from typing import List
-from .defaults import Mach
-from .mach.topology import QPUTopology
-from .mach.transpilers import TranspilerFactory
-from .arch.preconds import Precondition
-from .arch.postconds import Postcondition
-from .arch.instruction import Instruction
-from .arch.circuit import Circuit
+from lccfq_lang.defaults import Mach
+from lccfq_lang.mach.topology import QPUTopology
+from lccfq_lang.mach.transpilers import TranspilerFactory
+from lccfq_lang.arch.preconds import Precondition
+from lccfq_lang.arch.postconds import Postcondition
+from lccfq_lang.arch.instruction import Instruction
+from lccfq_lang.arch.circuit import Circuit
 
 
 class QPUStatus(Enum):

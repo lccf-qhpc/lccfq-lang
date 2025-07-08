@@ -11,15 +11,27 @@ Contact: nunezco2@illinois.edu
 """
 from abc import ABC, abstractmethod
 from typing import List
-from .ir import Gate
-from ..arch.instruction import Instruction
+from lccfq_lang.mach.ir import Gate
+from lccfq_lang.mach.topology import QPUTopology
+from lccfq_lang.arch.instruction import Instruction
 
 
 class Transpiler(ABC):
+    """
+    A transpiler is an object that uses a mapping and a specific rendition of
+    an instruction to produce native gates for a specific QPU.
+    """
+
+    def __init__(self):
+        self.mapping = False
+        self.topology = None
 
     @abstractmethod
     def transpile(self, instruction: Instruction) -> List[Gate]:
         pass
+
+    def set_topology(self, topology: QPUTopology):
+        self.topology = topology
 
 
 class XYiSW(Transpiler):
@@ -33,8 +45,15 @@ class XYiSW(Transpiler):
         :param instruction: The instruction to transpile.
         :return: A list of gates implementing that instruction.
         """
-        pass
+        dispatch = {
+            "id": self._id,
+        }
 
+        return dispatch[instruction.symbol](instruction)
+
+    @staticmethod
+    def _id(instruction: Instruction):
+        return []
 
 class TranspilerFactory:
     """A transpiler factory that selects a specific transpiler based on

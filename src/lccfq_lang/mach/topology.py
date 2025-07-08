@@ -10,11 +10,12 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
+import networkx as nx
 
 from typing import List
 from enum import Enum
-from .error import BadTopologyType
-import networkx as nx
+from lccfq_lang.mach.error import BadTopologyType
+from lccfq_lang.arch.instruction import Instruction
 
 
 class QPUTopoType(Enum):
@@ -78,3 +79,14 @@ class QPUTopology:
         }
 
         return __dispatch[topo_type.LINEAR]()
+
+    def map(self, instruction: Instruction) -> Instruction:
+        """
+        Map an instruction from topology-independent qubits to the specifics of a device
+        architecture. The result of a map is a sequence of pairs indicating all swap
+        operations required to obtain the results
+
+        :param instruction:
+        :return:
+        """
+        pass
