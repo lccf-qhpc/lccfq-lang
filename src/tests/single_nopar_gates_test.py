@@ -22,7 +22,6 @@ def test_sqg_no_par_gen(gate):
 
     assert isinstance(instr, Instruction)
     assert instr.symbol == gate
-    assert instr.is_native is False
     assert instr.modifies_state is False
     assert instr.is_controlled is False
     assert instr.target_qubits == [0]

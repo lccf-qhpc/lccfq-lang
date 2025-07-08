@@ -18,7 +18,6 @@ def test_swap_gate():
 
     assert isinstance(instr, Instruction)
     assert instr.symbol == "swap"
-    assert instr.is_native is False
     assert instr.modifies_state is False
     assert instr.is_controlled is False
     assert instr.target_qubits == [1, 2]

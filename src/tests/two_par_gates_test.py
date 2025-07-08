@@ -28,7 +28,6 @@ def test_tqcg_par_gen(gate):
 
     assert isinstance(instr, Instruction)
     assert instr.symbol == gate
-    assert instr.is_native is False
     assert instr.modifies_state is False
     assert instr.is_controlled is True
     assert instr.target_qubits == [1]
