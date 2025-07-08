@@ -13,7 +13,7 @@ import toml
 
 from enum import Enum
 from dataclasses import dataclass
-from typing import List
+from typing import List, Dict
 from lccfq_lang.defaults import Mach
 from lccfq_lang.mach.ir import Gate, Control
 from lccfq_lang.mach.topology import QPUTopology
@@ -139,11 +139,11 @@ class QPU:
         :return: Nothing"""
         pass
 
-    def exec_circuit(self, program: List[Gate|Control]):
+    def exec_circuit(self, circuit: List[Gate|Control]) -> Dict[str, int]:
         """
         Execute the result of transpiling a circuit.
 
-        :param program: a program resulting from a quantum circuit, already transpiled
-        :return: nothing
+        :param circuit: a program resulting from a quantum circuit, already transpiled
+        :return: the results count from executing a circuit
         """
-        pass
+        return {}

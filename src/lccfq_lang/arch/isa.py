@@ -29,7 +29,6 @@ def sq_nopar_gates(gate_names):
                 def sg_method(self, tg: int = 0, shots=None) -> Instruction:
                     return Instruction(
                         symbol=gate_name,
-                        is_native=False,
                         modifies_state=False,
                         is_controlled=False,
                         target_qubits=[tg],
@@ -60,7 +59,6 @@ def sq_par_gates(gate_names):
                 def sg_method(self, tg: int = 0, params=None, shots=None) -> Instruction:
                     return Instruction(
                         symbol=gate_name,
-                        is_native=False,
                         modifies_state=False,
                         is_controlled=False,
                         target_qubits=[tg],
@@ -90,7 +88,6 @@ def tqc_nopar_gates(gate_names):
                 def sg_method(self, ct: int = 1, tg: int = 0, shots=None) -> Instruction:
                     return Instruction(
                         symbol=gate_name,
-                        is_native=False,
                         modifies_state=False,
                         is_controlled=True,
                         target_qubits=[tg],
@@ -120,7 +117,6 @@ def tqc_par_gates(gate_names):
                 def sg_method(self, ct: int = 1, tg: int = 0, params=None, shots=None) -> Instruction:
                     return Instruction(
                         symbol=gate_name,
-                        is_native=False,
                         modifies_state=False,
                         is_controlled=True,
                         target_qubits=[tg],
@@ -163,7 +159,6 @@ class ISA:
         """
         return Instruction(
             symbol="swap",
-            is_native=False,
             modifies_state=False,
             is_controlled=False,
             target_qubits=[tg_a, tg_b],
@@ -173,8 +168,7 @@ class ISA:
         )
 
     def id(self, tgs=None) -> Instruction:
-        """
-        The identity instruction is quite peculiar in the sense that it is fungible, and can be used for
+        """The identity instruction is quite peculiar in the sense that it is fungible, and can be used for
         various formal properties.
 
         :param tg: target qubits
@@ -182,8 +176,43 @@ class ISA:
         """
         return Instruction(
             symbol="id",
-            is_native=False,
             modifies_state=False,
+            is_controlled=False,
+            target_qubits=tgs,
+            control_qubits=None,
+            parameters=None,
+            shots=None,
+        )
+
+    def measure(self, tgs=None) -> Instruction:
+        """Measure one or multiple qubits. Note that
+        measurement modifies the state.
+
+        :param tgs: qubits to measure
+        :return: the measure instruction
+        """
+        return Instruction(
+            symbol="measure",
+            modifies_state=True,
+            is_controlled=False,
+            target_qubits=tgs,
+            control_qubits=None,
+            parameters=None,
+            shots=None,
+        )
+
+    def reset(self, tgs=None) -> Instruction:
+        """Reset one or multiple qubits. Note that
+        measurement modifies the state.
+
+        Note: at the start,
+
+        :param tgs: qubits to reset
+        :return: the measure instruction
+        """
+        return Instruction(
+            symbol="reset",
+            modifies_state=True,
             is_controlled=False,
             target_qubits=tgs,
             control_qubits=None,

@@ -44,6 +44,7 @@ class Circuit:
         self.creg = creg
         self.shots = shots
         self.operations: List[Instruction] = list()
+        self.results = None
 
     def generate(self) -> List[Gate|Control]:
         """Generate calls the machinery that expands and produces our IR for the LCCFQ
@@ -81,4 +82,4 @@ class Circuit:
         :return: none
         """
         program = self.generate()
-        self.qpu.exec_circuit(program)
+        self.result = self.qpu.exec_circuit(program)
