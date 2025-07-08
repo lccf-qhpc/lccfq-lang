@@ -40,7 +40,6 @@ class Instruction(ABC):
     """
     def __init__(self,
                  symbol: str,
-                 is_native: bool = False,
                  modifies_state: bool = True,
                  is_controlled: bool = False,
                  target_qubits: List[int] = None,
@@ -51,7 +50,6 @@ class Instruction(ABC):
         # Basis properties of an instruction
         self.symbol = symbol
         self.instruction_type = InstructionType.DELAYED
-        self.is_native = is_native
         self.modifies_state = modifies_state
         self.is_controlled = is_controlled
         self.is_mapped = False
@@ -65,7 +63,7 @@ class Instruction(ABC):
         self.post: Set[Postcondition] = set()
 
     def __repr__(self):
-        return f"{self.symbol} over {self.target_qubits} ctrl by {self.control_qubits} w/ params={self.parameters}"
+        return f"{self.symbol} @ {self.target_qubits} ctrl by {self.control_qubits} w/ params={self.parameters}"
 
     def add_precondition(self,
                          precondition: Precondition) -> None:
