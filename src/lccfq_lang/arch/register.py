@@ -10,7 +10,7 @@ License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
 from typing import List
-from .mapping import QPUMapping
+from ..backend import QPU
 from .instruction import Instruction
 
 
@@ -22,7 +22,7 @@ class QRegister:
     a representation that can
     """
 
-    def __init__(self, qubit_count: int, mapping: QPUMapping) -> None:
+    def __init__(self, qubit_count: int, qpu: QPU) -> None:
         """
         Creates a register with qubits as abstract lines and a mapping to real hardware
 
@@ -30,7 +30,7 @@ class QRegister:
         :param mapping:
         """
         self.qubit_count = qubit_count
-        self.mapping = mapping
+        self.qpu = qpu
 
     def expand(self, instruction: Instruction) -> List[Instruction]:
         """
@@ -44,7 +44,7 @@ class QRegister:
 
     def challenge(self, instruction: Instruction):
         """Ensure an instruction is valid and well-formed. Errors are raised
-        as exceptions
+        as exceptions. Challenging is performed for a specific QPU.
     
         :param instruction: instruction to test
         :return: nothing

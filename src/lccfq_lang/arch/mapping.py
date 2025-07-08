@@ -9,10 +9,10 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
-from dis import Instruction
+from .instruction import Instruction
 from .error import NotEnoughQubits
 from ..mach.topology import QPUTopology
-from typing import List, Dict
+from typing import List
 
 
 class QPUMapping:

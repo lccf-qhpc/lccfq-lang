@@ -13,9 +13,9 @@ License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
 from backend import QPU
-from lccfq_lang.arch.instruction import Instruction
-from lccfq_lang.arch.register import QRegister, CRegister
-from lccfq_lang.mach.ir import Gate, Control
+from .instruction import Instruction
+from .register import QRegister, CRegister
+from ..mach.ir import Gate, Control
 from typing import List
 
 

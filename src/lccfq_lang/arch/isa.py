@@ -12,8 +12,7 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
-from lccfq_lang.arch.instruction import Instruction
-from lccfq_lang.arch.error import BadParameterCount, UndefinedParametricInstruction
+from .instruction import Instruction
 
 ### Generator for gate-based instructions
 

@@ -12,15 +12,16 @@ Contact: nunezco2@illinois.edu
 import toml
 
 from enum import Enum
-from dataclasses import dataclass
 from typing import List, Dict
 from lccfq_lang.defaults import Mach
 from lccfq_lang.mach.ir import Gate, Control
 from lccfq_lang.mach.topology import QPUTopology
 from lccfq_lang.mach.transpilers import TranspilerFactory
+from lccfq_lang.arch.mapping import QPUMapping
 from lccfq_lang.arch.preconds import Precondition
 from lccfq_lang.arch.postconds import Postcondition
 from lccfq_lang.arch.instruction import Instruction
+from lccfq_lang.sys.base import QPUConfig, QPUConnection
 
 
 class QPUStatus(Enum):
@@ -38,26 +39,6 @@ class QPUStatus(Enum):
     NO_ANSWER = -3
 
 
-@dataclass
-class QPUConnection:
-    ip: str
-    port: int
-
-
-@dataclass
-class QPUConfig:
-    """Representation of the configuration that a QPU requires to operate inside LCCF.
-    """
-    name: str
-    location: str
-    qubit_count: int
-    native_gates: List[str]
-    qubits: List[int]
-    exclusions: List[int]
-    topology: QPUTopology
-    connection: QPUConnection
-
-
 class QPU:
     """A `QPU` determines all interactions with the device through issuing circuit, control and benchmark
     instructions. Accessing the backend requires submitting requests through a REST interface. An HPC system
@@ -71,6 +52,8 @@ class QPU:
                 ):
         #Load the configuration and establish the bridge
         self.config = self.__from_file(filename)
+        virtual_qubits = list(range(self.config.qubit_count))
+        self.mapping = QPUMapping(virtual_qubits, QPUTopology(self.config))
         self.__bridge()
 
         # Check that we at least have a default transpiler
@@ -84,14 +67,7 @@ class QPU:
         data = toml.load(filename)
 
         qpu_data = data["qpu"]
-        topology_data = data["topology"]
         network_data = data["network"]
-
-        topology = QPUTopology(
-            name=topology_data["name"],
-            qubits=topology_data["qubits"],
-            connections=topology_data["connections"]
-        )
 
         connection = QPUConnection(
             ip=network_data["ip"],
@@ -101,11 +77,10 @@ class QPU:
         return QPUConfig(
             name=qpu_data["name"],
             location=qpu_data["location"],
-            qubit_count=qpu_data["qubit_count"],
+            qubit_count=int(qpu_data["qubit_count"]),
             native_gates=qpu_data["native_gateset"],
             qubits=qpu_data["qubits"],
             exclusions=qpu_data["exclusions"],
-            topology=topology,
             connection=connection
         )
 

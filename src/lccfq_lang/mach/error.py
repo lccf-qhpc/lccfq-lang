@@ -21,3 +21,15 @@ class BadTopologyType(Exception):
     def __init__(self, expected):
         self.message = f"Machine topology different from specified - expected: {expected}"
         super().__init__(self.message)
+
+class InsufficientGoodQubits(Exception):
+    """Exception raised when the QPU lacks enough good qubits either by static definition
+    or during execution.
+
+    Attributes:
+        message -- explanation of the error
+    """
+
+    def __init__(self, expected, actual):
+        self.message = f"Insufficient number of good qubits to satisfy request - expected: {expected}\tactual: {actual}"
+        super().__init__(self.message)
