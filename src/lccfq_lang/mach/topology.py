@@ -43,6 +43,12 @@ class QPUTopology:
         if not self.__test(self.topo_type):
             raise BadTopologyType(self.topo_type)
 
+        self.real_qubits = self.__remove_exclusions(topo_spec)
+        self.real_connections = self.__filter_connections(topo_spec)
+
+        for u, v in self.real_connections:
+            self.internal.add_edge(u, v)
+
     def qubits(self) -> List[int]:
         """List of available device qubit indices
 
@@ -79,6 +85,37 @@ class QPUTopology:
         }
 
         return __dispatch[topo_type.LINEAR]()
+
+
+    def __remove_exclusions(self, topo_spec):
+        """Calculate the actual usable qubits
+
+        :return: List of usable virtual qubits
+        """
+        if self.topo_type == "linear":
+            # We preserve only elements from the smallest exclusion, since
+            # assuming an ordering of qubits numbered from the readout resonator
+            # outwards
+            min_exclusion = min(topo_spec["exclusions"])
+            virtual_qubits = list(filter((lambda q: q < min_exclusion), topo_spec["qubits"]))
+        else:
+            # For the moment, do a set difference
+            virtual_qubits = list(set(topo_spec["qubits"]) - set(topo_spec["exclusions"]))
+
+        return virtual_qubits
+
+    @staticmethod
+    def __filter_connections(topo_spec):
+        """Filter connections that do not match exclusions in the topology
+
+        :param topo_spec: specification of intended topology
+        :return: filtered connections
+        """
+        if not topo_spec["exclusions"]:
+            return topo_spec["connections"]  # nothing to exclude
+
+        min_excluded = min(topo_spec["exclusions"])
+        return [c for c in topo_spec["connections"] if min_excluded not in c]
 
     def map(self, instruction: Instruction) -> Instruction:
         """

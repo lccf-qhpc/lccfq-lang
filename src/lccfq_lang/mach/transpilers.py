@@ -11,9 +11,8 @@ Contact: nunezco2@illinois.edu
 """
 from abc import ABC, abstractmethod
 from typing import List
-from lccfq_lang.mach.ir import Gate
-from lccfq_lang.mach.topology import QPUTopology
-from lccfq_lang.arch.instruction import Instruction
+from .ir import Gate
+from ..arch.instruction import Instruction
 
 
 class Transpiler(ABC):

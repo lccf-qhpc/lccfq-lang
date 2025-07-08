@@ -9,7 +9,7 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import List
 
 
