@@ -32,11 +32,31 @@ class QRegister:
         self.qubit_count = qubit_count
         self.mapping = mapping
 
-    def apply(self, instruction: Instruction) -> List[Instruction]:
+    def expand(self, instruction: Instruction) -> List[Instruction]:
         """
-        Apply an instruction to the register.
+        Apply an instruction to the register. We obtain a list of new instructions based on the potential
+        need to perform swaps on the gates. We assume an instruction has already been challenged.
 
         :param instruction: instruction to apply
         :return: expanded instruction list
         """
-        return self.mapping.map(instruction)
+        return []
+
+    def challenge(self, instruction: Instruction):
+        """Ensure an instruction is valid and well-formed. Errors are raised
+        as exceptions
+    
+        :param instruction: instruction to test
+        :return: nothing
+        """
+        pass
+
+
+class CRegister:
+    """A classical register implementation
+    """
+
+    def __init__(self, size: int):
+        self.bitcount = size
+
+

@@ -30,9 +30,6 @@ class Transpiler(ABC):
     def transpile(self, instruction: Instruction) -> List[Gate]:
         pass
 
-    def set_topology(self, topology: QPUTopology):
-        self.topology = topology
-
 
 class XYiSW(Transpiler):
     """Transpilation class for Pfaff Lab hardware.

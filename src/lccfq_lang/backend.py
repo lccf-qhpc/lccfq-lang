@@ -15,12 +15,12 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import List
 from lccfq_lang.defaults import Mach
+from lccfq_lang.mach.ir import Gate, Control
 from lccfq_lang.mach.topology import QPUTopology
 from lccfq_lang.mach.transpilers import TranspilerFactory
 from lccfq_lang.arch.preconds import Precondition
 from lccfq_lang.arch.postconds import Postcondition
 from lccfq_lang.arch.instruction import Instruction
-from lccfq_lang.arch.circuit import Circuit
 
 
 class QPUStatus(Enum):
@@ -139,6 +139,11 @@ class QPU:
         :return: Nothing"""
         pass
 
-    def circuit(self, circuit: Circuit):
-        """"""
+    def exec_circuit(self, program: List[Gate|Control]):
+        """
+        Execute the result of transpiling a circuit.
+
+        :param program: a program resulting from a quantum circuit, already transpiled
+        :return: nothing
+        """
         pass
