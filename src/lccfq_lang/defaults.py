@@ -11,7 +11,7 @@ Contact: nunezco2@illinois.edu
 """
 
 from dataclasses import dataclass
-from .mach.transpilers import TranspilerFactory
+from .sys.factories.mach import TranspilerFactory
 
 
 @dataclass

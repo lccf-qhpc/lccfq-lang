@@ -74,7 +74,6 @@ class Control(Command):
         }
 
 
-
 class Test(Command):
     """Define a test instruction. Tests can be parametric and require specifying the number of
     shots required to obtain meaningful statistics.

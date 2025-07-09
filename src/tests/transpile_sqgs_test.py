@@ -1,5 +1,5 @@
 """
-Filename: single_par_gates_test.py
+Filename: transpile_sqgs_gates_test.py
 Author: Santiago Nunez-Corrales
 Date: 2025-05-01
 Version: 1.0
@@ -12,7 +12,7 @@ Contact: nunezco2@illinois.edu
 import pytest
 from math import pi as PI
 from lccfq_lang.arch.instruction import Instruction
-from lccfq_lang.mach.transpilers import XYiSW
+from lccfq_lang.sys.factories.mach import TranspilerFactory
 from lccfq_lang.mach.ir import Gate
 
 
@@ -25,11 +25,11 @@ single_qubit_gates = [
     ("sdg", []),
     ("t", []),
     ("tdg", []),
-    ("p", [PI / 2]),
-    ("rx", [PI / 4]),
-    ("ry", [PI / 3]),
-    ("rz", [PI / 5]),
-    ("phase", [PI / 6])
+    ("p", [PI/2]),
+    ("rx", [PI/4]),
+    ("ry", [PI/3]),
+    ("rz", [PI/5]),
+    ("phase", [PI/6])
 ]
 
 @pytest.mark.parametrize("symbol,params", single_qubit_gates)
@@ -42,8 +42,8 @@ def test_transpile_single_qubit(symbol, params):
         shots=None
     )
 
-    transpiler = XYiSW()
-    gates = transpiler.transpile(instr)
+    transpiler = TranspilerFactory().get(mach="pfaff_v1")()
+    gates = transpiler.transpile_gate(instr)
 
     print(f"{instr}")
     print("to")

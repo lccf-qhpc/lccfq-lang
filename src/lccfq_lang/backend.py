@@ -16,12 +16,12 @@ from typing import List, Dict
 from .defaults import Mach
 from .mach.ir import Gate, Control
 from .mach.topology import QPUTopology
-from .mach.transpilers import TranspilerFactory
 from .arch.mapping import QPUMapping
 from .arch.preconds import Precondition
 from .arch.postconds import Postcondition
 from .arch.instruction import Instruction
 from .sys.base import QPUConfig, QPUConnection
+from .sys.factories.mach import TranspilerFactory
 
 
 class QPUStatus(Enum):

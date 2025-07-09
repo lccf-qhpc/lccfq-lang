@@ -12,6 +12,7 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
+from typing import List
 from .instruction import Instruction
 
 ### Generator for gate-based instructions
@@ -132,12 +133,41 @@ def tqc_par_gates(gate_names):
 
     return decorator
 
+def tests(gate_names):
+    """
+    Make two-qubit parametric gate methods.
+
+    :param gate_names: strings with single gate names
+    :return: decorator for target class
+    """
+    def decorator(cls):
+        for name in gate_names:
+            def mk_sg_method(gate_name):
+                def sg_method(self, tgs: List[int] = None, params=None, shots=None) -> Instruction:
+                    return Instruction(
+                        symbol=gate_name,
+                        modifies_state=False,
+                        is_controlled=True,
+                        target_qubits=tgs,
+                        control_qubits=None,
+                        parameters=params,
+                        shots=shots
+                    )
+
+                sg_method.__name__ = gate_name
+                return sg_method
+
+            setattr(cls, name, mk_sg_method(name))
+        return cls
+
+    return decorator
 
 @sq_nopar_gates([ "x", "y", "z", "h", "s", "sdg", "t", "tdg" ])
 @sq_par_gates(["p", "rx", "ry", "rz", "phase", "u2", "u3"])
 @tqc_nopar_gates(["cx", "cy", "cz", "ch"])
 @tqc_par_gates(["cx", "cy", "cz", "ch"])
 @tqc_par_gates(["cp", "crx", "cry", "crz", "cphase", "cu"])
+#@tests(["rabi_amp", "rabi_pow", ...])
 class ISA:
     """The Instruction Set Architecture comprises all possible operations that LCCF hardware
     will be able to make.
@@ -146,21 +176,22 @@ class ISA:
     def __init__(self, name: str):
         self.name = name
 
-    def swap(self, tg_a: int, tg_b: int) -> Instruction:
+    def swap(self, ct: int, tg: int) -> Instruction:
         """
         We define explicitly the swap gate due to its significance in the LCCF architecture and how
-        it breaks the general pattern of other gates.
+        it breaks the general pattern of other gates. We use target and control despite not being
+        controlled to simplify transpilation.
 
-        :param tg_a: target qubit a
-        :param tg_b: target qubit b
+        :param ct: target qubit a
+        :param tg: target qubit b
         :return: SWAP instruction
         """
         return Instruction(
             symbol="swap",
             modifies_state=False,
             is_controlled=False,
-            target_qubits=[tg_a, tg_b],
-            control_qubits=None,
+            target_qubits=[tg],
+            control_qubits=[ct],
             parameters=None,
             shots=None,
         )

@@ -14,13 +14,13 @@ from lccfq_lang.arch.instruction import Instruction
 
 def test_swap_gate():
     isa = ISA("lccfq")
-    instr = isa.swap(tg_a=1, tg_b=2)
+    instr = isa.swap(ct=1, tg=2)
 
     assert isinstance(instr, Instruction)
     assert instr.symbol == "swap"
     assert instr.modifies_state is False
     assert instr.is_controlled is False
-    assert instr.target_qubits == [1, 2]
-    assert instr.control_qubits is None
+    assert instr.target_qubits == [2]
+    assert instr.control_qubits == [1]
     assert instr.parameters is None
     assert instr.shots is None
