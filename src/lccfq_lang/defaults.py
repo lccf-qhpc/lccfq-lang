@@ -11,9 +11,6 @@ Contact: nunezco2@illinois.edu
 """
 
 from dataclasses import dataclass
-
-
-# Static data
 from .mach.transpilers import TranspilerFactory
 
 
@@ -29,4 +26,3 @@ class Paths:
 @dataclass
 class Mach:
     transpiler: str = TranspilerFactory().get("pfaff_v1")
-

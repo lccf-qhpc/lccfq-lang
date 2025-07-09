@@ -13,15 +13,15 @@ import toml
 
 from enum import Enum
 from typing import List, Dict
-from lccfq_lang.defaults import Mach
-from lccfq_lang.mach.ir import Gate, Control
-from lccfq_lang.mach.topology import QPUTopology
-from lccfq_lang.mach.transpilers import TranspilerFactory
-from lccfq_lang.arch.mapping import QPUMapping
-from lccfq_lang.arch.preconds import Precondition
-from lccfq_lang.arch.postconds import Postcondition
-from lccfq_lang.arch.instruction import Instruction
-from lccfq_lang.sys.base import QPUConfig, QPUConnection
+from .defaults import Mach
+from .mach.ir import Gate, Control
+from .mach.topology import QPUTopology
+from .mach.transpilers import TranspilerFactory
+from .arch.mapping import QPUMapping
+from .arch.preconds import Precondition
+from .arch.postconds import Postcondition
+from .arch.instruction import Instruction
+from .sys.base import QPUConfig, QPUConnection
 
 
 class QPUStatus(Enum):

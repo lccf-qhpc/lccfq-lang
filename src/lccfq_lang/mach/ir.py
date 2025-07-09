@@ -29,10 +29,15 @@ class Gate(Command):
     def __init__(self,
                  symbol: str,
                  target_qubits: List[int],
-                 control_qubits: List[int]):
+                 control_qubits: List[int],
+                 params: List[float]):
         super().__init__(symbol)
         self.target_qubits = target_qubits
         self.control_qubits = control_qubits
+        self.params = params
+
+    def __repr__(self):
+        return f"G: {self.symbol} @ {self.target_qubits} ctrl by {self.control_qubits} w/ params={self.params}"
 
     def to_json(self):
         """Provide a serializable JSON representation of a gate to cross the backend.
@@ -42,7 +47,8 @@ class Gate(Command):
         return {
             "symbol": self.symbol,
             "target_qubits": self.target_qubits,
-            "control_qubits": self.control_qubits
+            "control_qubits": self.control_qubits,
+            "params": self.params
         }
 
 

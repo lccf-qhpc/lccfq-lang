@@ -11,7 +11,7 @@ Contact: nunezco2@illinois.edu
 """
 import pytest
 
-from lccfq_lang.arch.isa import ISA
+from lccfq_lang import ISA
 from lccfq_lang.arch.instruction import Instruction
 
 @pytest.mark.parametrize("gate", ["x", "y", "z", "h", "s", "sdg", "t"])

@@ -12,7 +12,6 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
-from backend import QPU
 from .instruction import Instruction
 from .register import QRegister, CRegister
 from ..mach.ir import Gate, Control

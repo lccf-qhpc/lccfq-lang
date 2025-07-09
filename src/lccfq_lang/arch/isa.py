@@ -133,7 +133,6 @@ def tqc_par_gates(gate_names):
     return decorator
 
 
-
 @sq_nopar_gates([ "x", "y", "z", "h", "s", "sdg", "t", "tdg" ])
 @sq_par_gates(["p", "rx", "ry", "rz", "phase", "u2", "u3"])
 @tqc_nopar_gates(["cx", "cy", "cz", "ch"])
@@ -166,15 +165,15 @@ class ISA:
             shots=None,
         )
 
-    def id(self, tgs=None) -> Instruction:
-        """The identity instruction is quite peculiar in the sense that it is fungible, and can be used for
+    def nop(self, tgs=None) -> Instruction:
+        """The nop instruction is quite peculiar in the sense that it is fungible, and can be used for
         various formal properties.
 
         :param tg: target qubits
         :return: an identity instruction
         """
         return Instruction(
-            symbol="id",
+            symbol="nop",
             modifies_state=False,
             is_controlled=False,
             target_qubits=tgs,
