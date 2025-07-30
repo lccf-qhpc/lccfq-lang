@@ -10,6 +10,7 @@ License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
 import copy
+import numpy as np
 
 from typing import List, Dict
 from .error import NoMeasurementsAvailable, MalformedInstruction, NotAllowedInContext
@@ -48,8 +49,8 @@ class QRegister:
 
     def expand(self, instruction: Instruction) -> List[Instruction]:
         """
-        Apply an instruction to the register. We obtain a list of new instructions based on the potential
-        need to perform swaps on the gates. We assume an instruction has already been challenged.
+        Apply an instruction to the register. We obtain a list of new instructions before
+        performing swaps on the gates. We assume an instruction has already been challenged.
 
         :param instruction: instruction to apply
         :return: expanded instruction list
@@ -57,10 +58,46 @@ class QRegister:
         # Step 1: map the instruction from virtual to physical qubits
         mapped_instruction = self.qpu.mapping.map(instruction)
 
-        # Step 2, case 1: we have instructions that must be themselves expanded before SWAPS
+        # Step 2: we have instructions that must be themselves expanded before SWAPS are introduced
 
+        ## Case 1: u2(phi, lambda)
+        if instruction.symbol == "u2":
+            phi = instruction.parameters[0]
+            lbmd = instruction.parameters[1]
 
-        return []
+            return [
+                self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[phi]),
+                self.qpu.isa.ry(tg=instruction.target_qubits[0], params=[np.pi/2]),
+                self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[lbmd])
+            ]
+        ## Case 2: u3
+        elif instruction.symbol == "u3":
+            phi = instruction.parameters[0]
+            theta = instruction.parameters[1]
+            lbmd = instruction.parameters[2]
+
+            return [
+                self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[phi]),
+                self.qpu.isa.ry(tg=instruction.target_qubits[0], params=[theta]),
+                self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[lbmd])
+            ]
+        ## Case 3: cu
+        elif instruction.symbol == "cu":
+            phi = instruction.parameters[0]
+            theta = instruction.parameters[1]
+            lbmd = instruction.parameters[2]
+
+            return [
+                self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[lbmd]),
+                self.qpu.isa.ry(tg=instruction.target_qubits[0], params=[theta/2]),
+                self.qpu.isa.cx(ct=control, tg=instruction.target_qubits[0]),
+                self.qpu.isa.ry(tg=instruction.target_qubits[0], params=[-theta/2]),
+                self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[-(phi + lbmd)]),
+                self.qpu.isa.cx(ct=control, tg=instruction.target_qubits[0]),
+                self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[phi])
+            ]
+        else:
+            return instruction
 
     def challenge(self, instruction: Instruction, context: QContext) -> Instruction:
         """Ensure an instruction is valid and well-formed. Errors are raised

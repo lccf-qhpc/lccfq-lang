@@ -16,6 +16,7 @@ from typing import List, Dict
 from .defaults import Mach
 from .mach.ir import Gate, Control
 from .mach.topology import QPUTopology
+from .arch.isa import ISA
 from .arch.mapping import QPUMapping
 from .arch.preconds import Precondition
 from .arch.postconds import Postcondition
@@ -55,6 +56,9 @@ class QPU:
         virtual_qubits = list(range(self.config.qubit_count))
         self.mapping = QPUMapping(virtual_qubits, QPUTopology(self.config))
         self.__bridge()
+
+        # Instantiate the LCCF Instruction Set Architecture
+        self.isa = ISA("lccfq")
 
         # Check that we at least have a default transpiler
         if self.config.name is None:
