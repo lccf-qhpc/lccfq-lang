@@ -13,9 +13,8 @@ License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
 from typing import List
-from .instruction import Instruction
+from .instruction import Instruction, InstructionType
 
-### Generator for gate-based instructions
 
 def sq_nopar_gates(gate_names):
     """
@@ -135,7 +134,7 @@ def tqc_par_gates(gate_names):
 
 def tests(gate_names):
     """
-    Make two-qubit parametric gate methods.
+    Make single-qubit test methods.
 
     :param gate_names: strings with single gate names
     :return: decorator for target class
@@ -144,15 +143,19 @@ def tests(gate_names):
         for name in gate_names:
             def mk_sg_method(gate_name):
                 def sg_method(self, tgs: List[int] = None, params=None, shots=None) -> Instruction:
-                    return Instruction(
+                    inst = Instruction(
                         symbol=gate_name,
                         modifies_state=False,
-                        is_controlled=True,
+                        is_controlled=False,
                         target_qubits=tgs,
                         control_qubits=None,
                         parameters=params,
                         shots=shots
                     )
+
+                    inst.instruction_type = InstructionType.TEST
+
+                    return inst
 
                 sg_method.__name__ = gate_name
                 return sg_method
@@ -167,11 +170,18 @@ def tests(gate_names):
 @tqc_nopar_gates(["cx", "cy", "cz", "ch"])
 @tqc_par_gates(["cx", "cy", "cz", "ch"])
 @tqc_par_gates(["cp", "crx", "cry", "crz", "cphase", "cu"])
-#@tests(["rabi_amp", "rabi_pow", ...])
+@tests(["resfreq", "satspect", "powrab", "pispec", "resspect", "dispshift", "rocalib"])
 class ISA:
     """The Instruction Set Architecture comprises all possible operations that LCCF hardware
     will be able to make.
     """
+    __circuit_instr = [
+        "nop", "swap", "x", "y", "z", "h", "s", "sdg", "t", "tdg",
+        "p", "rx", "ry", "rz", "phase", "u2", "u3",
+        "cx", "cy", "cz", "ch",
+        "cp", "crx", "cry", "crz", "cphase", "cu",
+        "measure", "reset"
+    ]
 
     def __init__(self, name: str):
         self.name = name
@@ -203,7 +213,7 @@ class ISA:
         :param tg: target qubits
         :return: an identity instruction
         """
-        return Instruction(
+        inst = Instruction(
             symbol="nop",
             modifies_state=False,
             is_controlled=False,
@@ -213,6 +223,10 @@ class ISA:
             shots=None,
         )
 
+        # We want NOPs available and fungible with a general type
+        inst.instruction_type = InstructionType.DELAYED
+        return inst
+
     def measure(self, tgs=None) -> Instruction:
         """Measure one or multiple qubits. Note that
         measurement modifies the state.
@@ -220,7 +234,7 @@ class ISA:
         :param tgs: qubits to measure
         :return: the measure instruction
         """
-        return Instruction(
+        inst = Instruction(
             symbol="measure",
             modifies_state=True,
             is_controlled=False,
@@ -229,6 +243,9 @@ class ISA:
             parameters=None,
             shots=None,
         )
+
+        inst.instruction_type = InstructionType.CIRCUIT
+        return inst
 
     def reset(self, tgs=None) -> Instruction:
         """Reset one or multiple qubits. Note that
@@ -239,7 +256,7 @@ class ISA:
         :param tgs: qubits to reset
         :return: the measure instruction
         """
-        return Instruction(
+        inst = Instruction(
             symbol="reset",
             modifies_state=True,
             is_controlled=False,
@@ -248,3 +265,29 @@ class ISA:
             parameters=None,
             shots=None,
         )
+
+        # Resets may be used outside of circuits, delay until tested
+        inst.instruction_type = InstructionType.DELAYED
+        return inst
+
+    def ftol(self, threshold_fidelity) -> Instruction:
+        """Change the fidelity tolerance of the QPU as interpreted by the
+        backend. The intent of this instruction is to determine when qubits
+        define a functional QPU without raising an exception.
+
+        :param threshold_fidelity:
+        :return: instruction
+        """
+        inst = Instruction(
+            symbol="ftol",
+            modifies_state=True,
+            is_controlled=False,
+            target_qubits=None,
+            control_qubits=None,
+            parameters=[threshold_fidelity],
+            shots=None,
+        )
+
+        # This is explicitly a control instruction, not to be used inside circuits
+        inst.instruction_type = InstructionType.QPUSTATE
+        return inst

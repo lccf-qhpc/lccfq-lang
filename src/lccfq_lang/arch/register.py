@@ -9,10 +9,23 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
+import copy
+
 from typing import List, Dict
-from .error import NoMeasurementsAvailable
+from .error import NoMeasurementsAvailable, MalformedInstruction, NotAllowedInContext
 from ..backend import QPU
-from .instruction import Instruction
+from .instruction import Instruction, InstructionType
+from enum import Enum
+
+
+class QContext(Enum):
+    """
+    A context provides information about constraints that instructions must comply with.
+
+    """
+    CIRCUIT = 0
+    TEST = 1
+    UNKNOWN = -1
 
 
 class QRegister:
@@ -41,16 +54,90 @@ class QRegister:
         :param instruction: instruction to apply
         :return: expanded instruction list
         """
+        # Step 1: map the instruction from virtual to physical qubits
+        mapped_instruction = self.qpu.mapping.map(instruction)
+
         return []
 
-    def challenge(self, instruction: Instruction):
+    def challenge(self, instruction: Instruction, context: QContext) -> Instruction:
         """Ensure an instruction is valid and well-formed. Errors are raised
         as exceptions. Challenging is performed for a specific QPU.
     
-        :param instruction: instruction to test
-        :return: nothing
+        :param instruction: instruction to challenge
+        :return: modified instruction after challenge
         """
-        pass
+
+        # Context-free challenge: is the instruction well-formed?
+        _ = self._is_well_formed_instruction(instruction)
+
+        # Create a new deep copy of the instruction
+        instr = copy.deepcopy(instruction)
+
+        # Case 1: no control or test instructions while executing a circuit
+        if context == QContext.CIRCUIT:
+            if instruction.instruction_type in [InstructionType.QPUSTATE, InstructionType.TEST]:
+                raise NotAllowedInContext(instruction, context)
+
+            # We are in a circuit, remove shot data
+            instr.instruction_type = InstructionType.CIRCUIT
+            instr.shots = None
+        # Case 2: no QPU control instructions when executing a test block
+        elif context == QContext.TEST:
+            if instruction.instruction_type == InstructionType.QPUSTATE:
+                raise NotAllowedInContext(instruction, context)
+
+            if instruction.shots is None:
+                raise MalformedInstruction(instruction, "tests must indicate number of shots")
+
+            # Note that a gate, when interpreted as a test, will be executed and return a measurement
+            # automatically
+            instr.instruction_type = InstructionType.TEST
+        else:
+            # We have a general QPU control instruction which will occur outside of a context
+            instr.instruction_type = InstructionType.QPUSTATE
+
+        return instr
+
+    @staticmethod
+    def _is_well_formed_instruction(instruction: Instruction) -> bool:
+        """Determine if the instruction is well-formed.
+
+        :param instruction: instruction to test
+        :return: True if valid, raises ValueError otherwise
+        """
+        if not isinstance(instruction.symbol, str) or not instruction.symbol:
+            raise MalformedInstruction(instruction, "symbol must be a non-empty string")
+
+        # Targets must be a non-empty list of ints
+        if not isinstance(instruction.target_qubits, list) or not instruction.target_qubits:
+            if instruction.instruction_type != InstructionType.QPUSTATE:
+                raise MalformedInstruction(instruction, "target qubits must be a non-empty list")
+
+        if instruction.target_qubits is not None:
+            if not all(isinstance(q, int) and q >= 0 for q in instruction.target_qubits):
+                raise MalformedInstruction(instruction, "target qubits must be non-negative integers")
+
+        if instruction.is_controlled:
+            if not isinstance(instruction.control_qubits, list) or not instruction.control_qubits:
+                raise MalformedInstruction(instruction, "control qubits must be present if controlled")
+
+            if not all(isinstance(q, int) and q >= 0 for q in instruction.control_qubits):
+                raise MalformedInstruction(instruction, "control qubits must be non-negative integers")
+
+            if set(instruction.control_qubits).intersection(instruction.target_qubits):
+                raise MalformedInstruction(instruction, "target and control qubits must be different")
+
+        if instruction.parameters is not None:
+            if not isinstance(instruction.parameters, list):
+                raise MalformedInstruction(instruction, "parameters must be a list of real values")
+            if not all(isinstance(p, float) for p in instruction.parameters):
+                raise MalformedInstruction(instruction, "all parameters must be real values")
+
+        if instruction.shots is not None:
+            if not isinstance(instruction.shots, int) or instruction.shots <= 0:
+                raise MalformedInstruction(instruction, "shot count must be positive integer")
+
+        return True
 
 
 class CRegister:

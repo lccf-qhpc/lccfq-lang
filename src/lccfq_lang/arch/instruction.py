@@ -28,8 +28,8 @@ class InstructionType(Enum):
     """
     DELAYED = 0
     CIRCUIT = 1
-    CONTROL = 2
-    BENCHMARK = 3
+    QPUSTATE = 2
+    TEST = 3
 
 
 class Instruction(ABC):
@@ -82,3 +82,4 @@ class Instruction(ABC):
         :return:
         """
         self.post.add(postcondition)
+

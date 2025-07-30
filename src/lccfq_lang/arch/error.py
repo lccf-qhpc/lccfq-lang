@@ -56,3 +56,27 @@ class UndefinedParametricInstruction(Exception):
     def __init__(self, instruction, expected, present):
         self.message = f"No instruction with given parameters - inst: {instruction}\texpected: {expected}\tpresent: {present}"
         super().__init__(self.message)
+
+
+class MalformedInstruction(Exception):
+    """Exception raised when an instruction is not well-formed.
+
+    Attributes:
+        message -- explanation of the error
+    """
+
+    def __init__(self, instruction, cause):
+        self.message = f"Malformed instruction - inst: {instruction}\tcause: {cause}"
+        super().__init__(self.message)
+
+
+class NotAllowedInContext(Exception):
+    """Exception raised when an instruction is not allowed within a specific context.
+
+    Attributes:
+        message -- explanation of the error
+    """
+
+    def __init__(self, instruction, context):
+        self.message = f"Context prevents {instruction} in: {context}"
+        super().__init__(self.message)

@@ -9,7 +9,7 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
-from .instruction import Instruction
+from .instruction import Instruction, InstructionType
 from .error import NotEnoughQubits
 from ..mach.topology import QPUTopology
 from typing import List
@@ -31,21 +31,46 @@ class QPUMapping:
         self.virtual_qubits = virtual_qubits
         self.topology = topology
 
-        if self.virtual_qubits > self.topology.qubits():
+        if len(self.virtual_qubits) > len(self.topology.qubits()):
             raise NotEnoughQubits(len(self.virtual_qubits), len(self.topology.qubits()))
 
-        self.map = {}
+        self.mapping = {
+            v: p for v, p in zip(self.virtual_qubits, self.topology.qubits())
+        }
 
-        # Note that a program *can* request fewer qubits than provided by a device
-        for v, p in zip(self.virtual_qubits, self.topology.qubits()):
-            self.map[v] = p
-
-    def map(self, instruction: Instruction) -> List[Instruction]:
-        """Maps an instruction into a list of instructions based on this mapping.
-        SWAP may be introduced for non-contiguous qubits at a high level. Number of
-        swaps depends on labeling, as well as potential re-labelings.
+    def map(self, instruction: Instruction) -> Instruction:
+        """Maps an instruction into the provided topology.
 
         :param instruction:
-        :return: list of mapped instructions.
+        :return: mapped instruction.
         """
-        pass
+        mapped_targets = (
+            [self.mapping[q] for q in instruction.target_qubits]
+            if instruction.target_qubits
+            else []
+        )
+
+        mapped_controls = (
+            [self.mapping[q] for q in instruction.control_qubits]
+            if instruction.control_qubits
+            else []
+        )
+
+        mapped_instruction = Instruction(
+            symbol=instruction.symbol,
+            modifies_state=instruction.modifies_state,
+            is_controlled=instruction.is_controlled,
+            target_qubits=mapped_targets,
+            control_qubits=mapped_controls,
+            parameters=instruction.parameters,
+            shots=instruction.shots
+        )
+
+        # We may have a single test using a single gate with many shots
+        # or a full circuit
+        mapped_instruction.instruction_type = InstructionType.DELAYED
+        mapped_instruction.pre = instruction.pre.copy()
+        mapped_instruction.post = instruction.post.copy()
+        mapped_instruction.is_mapped = True
+
+        return mapped_instruction
