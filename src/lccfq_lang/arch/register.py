@@ -57,6 +57,9 @@ class QRegister:
         # Step 1: map the instruction from virtual to physical qubits
         mapped_instruction = self.qpu.mapping.map(instruction)
 
+        # Step 2, case 1: we have instructions that must be themselves expanded before SWAPS
+
+
         return []
 
     def challenge(self, instruction: Instruction, context: QContext) -> Instruction:
@@ -108,7 +111,6 @@ class QRegister:
         if not isinstance(instruction.symbol, str) or not instruction.symbol:
             raise MalformedInstruction(instruction, "symbol must be a non-empty string")
 
-        # Targets must be a non-empty list of ints
         if not isinstance(instruction.target_qubits, list) or not instruction.target_qubits:
             if instruction.instruction_type != InstructionType.QPUSTATE:
                 raise MalformedInstruction(instruction, "target qubits must be a non-empty list")

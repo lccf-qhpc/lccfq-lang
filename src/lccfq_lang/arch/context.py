@@ -13,8 +13,8 @@ License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
 from .instruction import Instruction
-from .register import QRegister, CRegister
-from ..mach.ir import Gate, Control
+from .register import QRegister, CRegister, QContext
+from ..mach.ir import Gate
 from typing import List, Dict
 
 
@@ -41,10 +41,9 @@ class Circuit:
         self.shots = shots
         self.operations: List[Instruction] = list()
 
-    def generate(self) -> List[Gate|Control]:
+    def generate(self) -> List[Gate]:
         """Generate calls the machinery that expands and produces our IR for the LCCFQ
-        components. Controls are needed to implement, for instance, circuit blocks to be
-        synthesized simultaneously.
+        components.
 
         :return: List of gates and controls so far contained in the circuit.
         """
@@ -63,7 +62,10 @@ class Circuit:
         :param instr: instruction to add
         :return: none
         """
-        self.qreg.challenge(instr)
+
+        # We try to catch errors as early as they appear, which is
+        # when these are included in the code.
+        self.qreg.challenge(instr, QContext.CIRCUIT)
         self.operations.append(instr)
 
     def __enter__(self):
@@ -82,5 +84,7 @@ class Circuit:
         :param exc_tb: none
         :return: none
         """
-        program = self.generate()
-        self.creg.absorb(self.qreg.qpu.exec_circuit(program))
+        initial = self.generate()
+        expanded = initial
+        transpiled = expanded
+        self.creg.absorb(self.qreg.qpu.exec_circuit(transpiled))

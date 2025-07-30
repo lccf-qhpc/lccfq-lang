@@ -196,7 +196,6 @@ class XYiSW(Transpiler):
         ]
         # Special case 3: CU needs to be decomposed at a high level
     }
-    # "cu": self._cu
 
     def __init__(self):
         """Add the main initialization table that will drive the transpilation process.
