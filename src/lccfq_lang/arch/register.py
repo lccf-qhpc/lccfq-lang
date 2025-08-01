@@ -15,8 +15,9 @@ import numpy as np
 from enum import Enum
 from typing import List, Dict
 from .error import NoMeasurementsAvailable, MalformedInstruction, NotAllowedInContext
-from ..backend import QPU
 from .instruction import Instruction, InstructionType
+from .isa import ISA
+from ..backend import QPU
 
 
 class QContext(Enum):
@@ -53,6 +54,16 @@ class QRegister:
         :return: mapped instruction
         """
         return self.qpu.map(instruction)
+
+    def swaps(self, instruction: Instruction, isa: ISA) -> List[Instruction]:
+        """
+        Forward adding swaps from the mapping and its topology.
+
+        :param instruction: instruction without swaps
+        :param isa: instruction set architecture
+        :return: list of instructions with potential swaps
+        """
+        return self.qpu.mapping.swaps(instruction, isa)
 
     def expand(self, instruction: Instruction) -> List[Instruction]:
         """

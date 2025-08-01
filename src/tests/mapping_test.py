@@ -16,21 +16,31 @@ from lccfq_lang.arch.isa import ISA
 from lccfq_lang.arch.mapping import QPUMapping
 from lccfq_lang.mach.topology import QPUTopology
 from lccfq_lang.arch.error import NotEnoughQubits
+from lccfq_lang.sys.base import QPUConfig
 
 
 @pytest.fixture
 def simple_topology_spec():
     return {
-        "type": "linear",
-        "qubits": [0, 1, 2],
-        "connections": [(0, 1), (1, 2)],
-        "exclusions": []
+        "qpu": {
+            "name": "pfaff_v1",
+            "location": "lab42",
+            "topology": "linear",
+            "qubit_count": 3,
+            "qubits": [0, 1, 2],
+            "couplings": [(0, 1), (1, 2)],
+            "exclusions": []
+        },
+        "network": {
+            "ip": "127.0.0.1",
+            "port": 1234
+        }
     }
 
 
 @pytest.fixture
 def topology(simple_topology_spec):
-    return QPUTopology(simple_topology_spec)
+    return QPUTopology(QPUConfig(simple_topology_spec))
 
 
 @pytest.fixture

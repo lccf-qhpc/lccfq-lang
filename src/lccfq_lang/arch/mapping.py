@@ -81,6 +81,7 @@ class QPUMapping:
         instructions are already mapped to physical qubits.
 
         :param instruction: original instruction
+        :param isa: instruction set architecture
         :return: list of instructions possibly couched between swaps
         """
         return self.topology.swaps(instruction, isa)

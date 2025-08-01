@@ -21,7 +21,7 @@ from .arch.mapping import QPUMapping
 from .arch.preconds import Precondition
 from .arch.postconds import Postcondition
 from .arch.instruction import Instruction
-from .sys.base import QPUConfig, QPUConnection
+from .sys.base import QPUConfig
 from .sys.factories.mach import TranspilerFactory
 
 
@@ -84,23 +84,7 @@ class QPU:
     def __from_file(filename: str) -> QPUConfig:
         data = toml.load(filename)
 
-        qpu_data = data["qpu"]
-        network_data = data["network"]
-
-        connection = QPUConnection(
-            ip=network_data["ip"],
-            port=network_data["port"]
-        )
-
-        return QPUConfig(
-            name=qpu_data["name"],
-            location=qpu_data["location"],
-            qubit_count=int(qpu_data["qubit_count"]),
-            native_gates=qpu_data["native_gateset"],
-            qubits=qpu_data["qubits"],
-            exclusions=qpu_data["exclusions"],
-            connection=connection
-        )
+        return QPUConfig(data)
 
     def __bridge(self):
         """

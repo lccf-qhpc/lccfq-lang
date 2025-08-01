@@ -15,6 +15,7 @@ import networkx as nx
 from typing import List
 from enum import Enum
 
+from ..sys.base import QPUConfig
 from ..arch.error import MalformedInstruction
 from .error import BadTopologyType, QubitsNotConnected
 from ..arch.isa import ISA
@@ -38,18 +39,18 @@ class QPUTopology:
         "linear": QPUTopoType.LINEAR,
     }
 
-    def __init__(self, topo_spec) -> None:
+    def __init__(self, config: QPUConfig) -> None:
         self.internal = nx.Graph()
 
-        topo_type = topo_spec["type"]
+        topo_type = config.topology
 
         if topo_type not in self.__type_from_name.keys():
             raise BadTopologyType(topo_type)
 
         self.topo_type = self.__type_from_name[topo_type]
 
-        self.real_qubits = self.__remove_exclusions(topo_spec)
-        self.real_connections = self.__filter_connections(topo_spec)
+        self.real_qubits = self.__remove_exclusions(config)
+        self.real_connections = self.__filter_connections(config)
 
         for u, v in self.real_connections:
             self.internal.add_edge(u, v)
@@ -95,35 +96,39 @@ class QPUTopology:
         return __dispatch[topo_type.LINEAR]()
 
 
-    def __remove_exclusions(self, topo_spec):
+    def __remove_exclusions(self, config: QPUConfig):
         """Calculate the actual usable qubits
 
         :return: List of usable virtual qubits
         """
-        if self.topo_type == "linear":
+        if config.topology == "linear":
             # We preserve only elements from the smallest exclusion, since
             # assuming an ordering of qubits numbered from the readout resonator
             # outwards
-            min_exclusion = min(topo_spec["exclusions"])
-            virtual_qubits = list(filter((lambda q: q < min_exclusion), topo_spec["qubits"]))
+            if not config.exclusions:
+                virtual_qubits = config.qubits
+            else:
+                min_exclusion = min(config.exclusions)
+                virtual_qubits = list(filter((lambda q: q < min_exclusion), config.qubits))
+
         else:
             # For the moment, do a set difference
-            virtual_qubits = list(set(topo_spec["qubits"]) - set(topo_spec["exclusions"]))
+            virtual_qubits = list(set(config.qubits) - set(config.exclusions))
 
         return virtual_qubits
 
     @staticmethod
-    def __filter_connections(topo_spec):
+    def __filter_connections(config: QPUConfig):
         """Filter connections that do not match exclusions in the topology
 
-        :param topo_spec: specification of intended topology
+        :param config: specification of intended topology
         :return: filtered connections
         """
-        if not topo_spec["exclusions"]:
-            return topo_spec["connections"]  # nothing to exclude
+        if not config.exclusions:
+            return config.couplings  # nothing to exclude
 
-        min_excluded = min(topo_spec["exclusions"])
-        return [c for c in topo_spec["connections"] if min_excluded not in c]
+        min_excluded = min(config.exclusions)
+        return [c for c in config.couplings if min_excluded not in c]
 
     def swaps(self, instruction: Instruction, isa: ISA) -> List[Instruction]:
         """
