@@ -16,6 +16,7 @@ from .instruction import Instruction
 from .register import QRegister, CRegister, QContext
 from ..mach.ir import Gate
 from typing import List, Dict
+from itertools import chain
 
 
 class Circuit:
@@ -29,25 +30,20 @@ class Circuit:
     def __init__(self,
                  qreg: QRegister,
                  creg: CRegister,
-                 shots: int = 1000):
+                 shots: int = 1000,
+                 verbose=False):
         """Create a new circuit.
 
         :param qreg: quantum register
         :param creg: classical register
         :param shots: number of shot to run this circuit for
+        :param verbose: trigger verbose output
         """
         self.qreg = qreg
         self.creg = creg
         self.shots = shots
-        self.operations: List[Instruction] = list()
-
-    def generate(self) -> List[Gate]:
-        """Generate calls the machinery that expands and produces our IR for the LCCFQ
-        components.
-
-        :return: List of gates and controls so far contained in the circuit.
-        """
-        return []
+        self.verbose = verbose
+        self.instructions: List[Instruction] = list()
 
     def results(self) -> Dict[str, int]:
         return self.creg.data
@@ -66,7 +62,7 @@ class Circuit:
         # We try to catch errors as early as they appear, which is
         # when these are included in the code.
         self.qreg.challenge(instr, QContext.CIRCUIT)
-        self.operations.append(instr)
+        self.instructions.append(instr)
 
     def __enter__(self):
         """Enter the context
@@ -84,7 +80,37 @@ class Circuit:
         :param exc_tb: none
         :return: none
         """
-        initial = self.generate()
-        expanded = initial
+        if self.verbose:
+            print("Parsed instructions:" )
+            print(self.instructions)
+            print("\n\n")
+
+        # A dry run only prints the instructions and return all results in -1
+        if self.qreg.qpu.last_pass == "dryrun":
+            self.creg.absorb({format(i, f"0{self.creg.bit_count}b"): -1 for i in range(2**self.creg.bit_count)})
+            return True
+
+        # Step 1: map all instructions from virtual qubits to physical qubits
+        mapped =  list(
+            map(lambda instr: self.qreg.map(instr), self.instructions)
+        )
+
+        # Step 2: introduce any required swaps (more swaps if done after expanding
+
+        # Step 3: expand special instructions into more ideal gates
+
+        expanded = list(
+            chain.from_iterable(
+                map(lambda instr: self.qreg.expand(instr), self.instructions)
+            )
+        )
+
+        if self.verbose:
+            print("Expanded instructions:" )
+            print(expanded)
+            print("\n\n")
+
         transpiled = expanded
         self.creg.absorb(self.qreg.qpu.exec_circuit(transpiled))
+
+        return True

@@ -14,8 +14,11 @@ import networkx as nx
 
 from typing import List
 from enum import Enum
-from lccfq_lang.mach.error import BadTopologyType
-from lccfq_lang.arch.instruction import Instruction
+
+from ..arch.error import MalformedInstruction
+from .error import BadTopologyType, QubitsNotConnected
+from ..arch.isa import ISA
+from ..arch.instruction import Instruction
 
 
 class QPUTopoType(Enum):
@@ -37,17 +40,22 @@ class QPUTopology:
 
     def __init__(self, topo_spec) -> None:
         self.internal = nx.Graph()
-        self.topo_type = topo_spec["type"]
 
-        # TODO: translate spec into actual topology
-        if not self.__test(self.topo_type):
-            raise BadTopologyType(self.topo_type)
+        topo_type = topo_spec["type"]
+
+        if topo_type not in self.__type_from_name.keys():
+            raise BadTopologyType(topo_type)
+
+        self.topo_type = self.__type_from_name[topo_type]
 
         self.real_qubits = self.__remove_exclusions(topo_spec)
         self.real_connections = self.__filter_connections(topo_spec)
 
         for u, v in self.real_connections:
             self.internal.add_edge(u, v)
+
+        if not self.__test(self.topo_type):
+            raise BadTopologyType(self.topo_type)
 
     def qubits(self) -> List[int]:
         """List of available device qubit indices
@@ -66,13 +74,13 @@ class QPUTopology:
         :param topo_type: type to verify
         :return: true if topology is linear
         """
-        if not nx.is_empty(self.internal):
+        if self.internal.number_of_nodes() == 0:
             return False
 
         if not nx.is_connected(self.internal):
             return False
 
-        if self.internal.number_of_nodes() != self.internal.number_of_nodes() - 1:
+        if self.internal.number_of_edges() != self.internal.number_of_nodes() - 1:
             return False
 
         degs = [d for n, d in self.internal.degree()]
@@ -117,13 +125,56 @@ class QPUTopology:
         min_excluded = min(topo_spec["exclusions"])
         return [c for c in topo_spec["connections"] if min_excluded not in c]
 
-    def map(self, instruction: Instruction) -> Instruction:
+    def swaps(self, instruction: Instruction, isa: ISA) -> List[Instruction]:
         """
         Map an instruction from topology-independent qubits to the specifics of a device
         architecture. The result of a map is a sequence of pairs indicating all swap
         operations required to obtain the results
 
-        :param instruction:
-        :return:
+        :param instruction: original instruction
+        :param isa: instruction set architecture for swaps
+        :return: list of instructions including potentially sandwiched swaps
         """
-        pass
+        targets = instruction.target_qubits or []
+        controls = instruction.control_qubits or []
+        all_qubits = controls + targets
+
+        if len(all_qubits) == 1:
+            return [instruction]
+
+        if len(all_qubits) != 2:
+            raise MalformedInstruction(instruction, f"Unknown {len(all_qubits)}-qubit gate.")
+
+        q0, q1 = all_qubits
+
+        if self.internal.has_edge(q0, q1):
+            return [instruction]
+
+        try:
+            path = nx.shortest_path(self.internal, source=q0, target=q1)
+        except nx.NetworkXNoPath:
+            raise QubitsNotConnected(q0, q1)
+
+        pre_swaps = []
+        post_swaps = []
+
+        for i in range(len(path) - 2):
+            pre_swaps.append(isa.swap(ct=path[i], tg=path[i + 1]))
+
+        routed_q0 = path[-2]
+        routed_q1 = path[-1]
+
+        routed_instr = Instruction(
+            symbol=instruction.symbol,
+            modifies_state=instruction.modifies_state,
+            is_controlled=instruction.is_controlled,
+            target_qubits=[routed_q1 if q1 in targets else routed_q0],
+            control_qubits=[routed_q0 if q0 in controls else routed_q1],
+            parameters=instruction.parameters,
+            shots=instruction.shots
+        )
+
+        for i in reversed(range(len(path) - 2)):
+            post_swaps.append(isa.swap(ct=path[i], tg=path[i + 1]))
+
+        return pre_swaps + [routed_instr] + post_swaps

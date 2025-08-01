@@ -33,3 +33,15 @@ class InsufficientGoodQubits(Exception):
     def __init__(self, expected, actual):
         self.message = f"Insufficient number of good qubits to satisfy request - expected: {expected}\tactual: {actual}"
         super().__init__(self.message)
+
+
+class QubitsNotConnected(Exception):
+    """Exception raised when the QPU topology lacks connections between two qubits.
+
+    Attributes:
+        message -- explanation of the error
+    """
+
+    def __init__(self, qa, qb):
+        self.message = f"Qubits not physically connected - qa: {qa} \tpresent: {qb}"
+        super().__init__(self.message)

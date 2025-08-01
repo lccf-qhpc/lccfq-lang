@@ -49,13 +49,27 @@ class QPU:
     """
 
     def __init__(self,
-                filename: str=None
+                filename: str=None,
+                last_pass: str=None
                 ):
         #Load the configuration and establish the bridge
         self.config = self.__from_file(filename)
         virtual_qubits = list(range(self.config.qubit_count))
         self.mapping = QPUMapping(virtual_qubits, QPUTopology(self.config))
+        self.last_pass = last_pass
         self.__bridge()
+
+
+        # Set last compilation/transpilation that produces code
+        if not last_pass in [
+            "dryrun",
+            "mapped",
+            "swaps",
+            "expanded",
+            "transpiled",
+            "executed"
+        ]:
+            pass
 
         # Instantiate the LCCF Instruction Set Architecture
         self.isa = ISA("lccfq")
@@ -126,3 +140,11 @@ class QPU:
         :return: the results count from executing a circuit
         """
         return {}
+
+    def map(self, instruction: Instruction) -> Instruction:
+        """Forward the mapping of an instruction provided by the internal mapping.
+
+        :param instruction: original instruction
+        :return: mapped instruction
+        """
+        return self.mapping.map(instruction)

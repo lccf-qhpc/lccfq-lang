@@ -12,11 +12,11 @@ Contact: nunezco2@illinois.edu
 import copy
 import numpy as np
 
+from enum import Enum
 from typing import List, Dict
 from .error import NoMeasurementsAvailable, MalformedInstruction, NotAllowedInContext
 from ..backend import QPU
 from .instruction import Instruction, InstructionType
-from enum import Enum
 
 
 class QContext(Enum):
@@ -38,14 +38,21 @@ class QRegister:
     """
 
     def __init__(self, qubit_count: int, qpu: QPU) -> None:
-        """
-        Creates a register with qubits as abstract lines and a mapping to real hardware
+        """Creates a register with qubits as abstract lines and a mapping to real hardware
 
         :param qubit_count:
         :param mapping:
         """
         self.qubit_count = qubit_count
         self.qpu = qpu
+
+    def map(self, instruction: Instruction) -> Instruction:
+        """Forward the mapping of an instruction provided by the QPU.
+
+        :param instruction: original instruction
+        :return: mapped instruction
+        """
+        return self.qpu.map(instruction)
 
     def expand(self, instruction: Instruction) -> List[Instruction]:
         """
@@ -90,14 +97,14 @@ class QRegister:
             return [
                 self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[lbmd]),
                 self.qpu.isa.ry(tg=instruction.target_qubits[0], params=[theta/2]),
-                self.qpu.isa.cx(ct=control, tg=instruction.target_qubits[0]),
+                self.qpu.isa.cx(ct=instruction.control_qubits[0], tg=instruction.target_qubits[0]),
                 self.qpu.isa.ry(tg=instruction.target_qubits[0], params=[-theta/2]),
                 self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[-(phi + lbmd)]),
-                self.qpu.isa.cx(ct=control, tg=instruction.target_qubits[0]),
+                self.qpu.isa.cx(ct=instruction.control_qubits[0], tg=instruction.target_qubits[0]),
                 self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[phi])
             ]
         else:
-            return instruction
+            return [instruction]
 
     def challenge(self, instruction: Instruction, context: QContext) -> Instruction:
         """Ensure an instruction is valid and well-formed. Errors are raised

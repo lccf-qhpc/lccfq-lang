@@ -80,3 +80,14 @@ class NotAllowedInContext(Exception):
     def __init__(self, instruction, context):
         self.message = f"Context prevents {instruction} in: {context}"
         super().__init__(self.message)
+
+class BadQPUConfiguration(Exception):
+    """Exception raised when the QPU topology not the correct one.
+
+    Attributes:
+        message -- explanation of the error
+    """
+
+    def __init__(self, expected, present):
+        self.message = f"QPU misconfigured - expected: {expected} \tpresent: {present}"
+        super().__init__(self.message)

@@ -10,6 +10,7 @@ License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
 from .instruction import Instruction, InstructionType
+from .isa import ISA
 from .error import NotEnoughQubits
 from ..mach.topology import QPUTopology
 from typing import List
@@ -74,3 +75,12 @@ class QPUMapping:
         mapped_instruction.is_mapped = True
 
         return mapped_instruction
+
+    def swaps(self, instruction: Instruction, isa: ISA) -> List[Instruction]:
+        """Delegate introducing swaps to the provided topology provided
+        instructions are already mapped to physical qubits.
+
+        :param instruction: original instruction
+        :return: list of instructions possibly couched between swaps
+        """
+        return self.topology.swaps(instruction, isa)
