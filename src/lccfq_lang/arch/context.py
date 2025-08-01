@@ -80,14 +80,15 @@ class Circuit:
         :param exc_tb: none
         :return: none
         """
-        if self.verbose:
-            print("Parsed instructions:" )
-            print(self.instructions)
-            print("\n\n")
-
         # A dry run only prints the instructions and return all results in -1
         if self.qreg.qpu.last_pass == "dryrun":
-            self.creg.absorb({format(i, f"0{self.creg.bit_count}b"): -1 for i in range(2**self.creg.bit_count)})
+
+
+            if self.verbose:
+                print("Parsed instructions:")
+                print(self.instructions)
+                print("\n\n")
+
             return True
 
         # Step 1: map all instructions from virtual qubits to physical qubits
@@ -96,21 +97,48 @@ class Circuit:
         )
 
         # Step 2: introduce any required swaps (more swaps if done after expanding
-
-        # Step 3: expand special instructions into more ideal gates
-
-        expanded = list(
+        swapped = list(
             chain.from_iterable(
-                map(lambda instr: self.qreg.expand(instr), self.instructions)
+                map(lambda instr: self.qreg.swaps(instr, self.qreg.qpu.isa), self.instructions)
             )
         )
 
-        if self.verbose:
-            print("Expanded instructions:" )
-            print(expanded)
-            print("\n\n")
+        # Step 3: expand special instructions into nicely realizable gates
 
-        transpiled = expanded
-        self.creg.absorb(self.qreg.qpu.exec_circuit(transpiled))
+        expanded = list(
+            chain.from_iterable(
+                map(lambda instr: self.qreg.expand(instr), swapped)
+            )
+        )
+
+        # Step 4: transpile finally into Gates
+        transpiled = list(
+            chain.from_iterable(
+                map(lambda instr: self.qreg.qpu.transpiler.transpile_gate(instr), expanded)
+            )
+        )
+
+        if self.qreg.qpu.last_pass == "executed":
+            result = self.qreg.qpu.exec_circuit(transpiled)
+        else:
+            result = {format(i, f"0{self.creg.bit_count}b"): -1 for i in range(2 ** self.creg.bit_count)}
+
+        if self.verbose:
+            stage_outputs = {
+                "mapped": ("Mapped instructions:", mapped),
+                "swaps": ("Swapped instructions:", swapped),
+                "expanded": ("Expanded instructions:", expanded),
+                "transpiled": ("Transpiled gates:", transpiled),
+                "executed": ("Execution result:", result),
+            }
+
+            label, data = stage_outputs.get(self.qreg.qpu.last_pass, ("Unknown stage", None))
+
+            if data is not None:
+                print(label)
+                print(data)
+                print("\n\n")
+
+        self.creg.absorb(result)
 
         return True
