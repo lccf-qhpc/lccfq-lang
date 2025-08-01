@@ -19,13 +19,13 @@ def quantum_teleportation():
     :return: nothing
     """
     qpu = QPU(filename="../config/default.qpu")
-    qreg = QRegister(3, qpu)  # q0: input, q1: entangled with q2, q2: Bob's qubit
-    creg = CRegister(2)       # c0 = result of measuring q0, c1 = result of measuring q1
+    qreg = QRegister(3, qpu)
+    creg = CRegister(2)
     isa = ISA("lccf")
 
     # Setup:
     #
-    # q0 = Alice
+    # q0 = Alice's qubit
     # q1 = shared entanglement qubit
     # q2 = Bob's qubit
 
