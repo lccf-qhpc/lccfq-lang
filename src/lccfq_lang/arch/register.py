@@ -162,6 +162,15 @@ class QRegister:
 
         return instr
 
+    def all(self):
+        return self.qpu.mapping.virtual_qubits
+
+    def but(self, minus: List[int]=None):
+        if minus is None:
+            return self.qpu.mapping.virtual_qubits
+        else:
+            return list(set(self.qpu.mapping.virtual_qubits) - set(minus))
+
     @staticmethod
     def _is_well_formed_instruction(instruction: Instruction) -> bool:
         """Determine if the instruction is well-formed.
