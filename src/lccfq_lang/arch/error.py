@@ -83,6 +83,18 @@ class UnknownInstruction(Exception):
         super().__init__(self.message)
 
 
+class UnknownCompilerPass(Exception):
+    """Exception raised when an unknown compiler pass is found.
+
+    Attributes:
+        message -- explanation of the error
+    """
+
+    def __init__(self, cpass):
+        self.message = f"Unrecognized compiler pass - pass: {cpass}"
+        super().__init__(self.message)
+
+
 class NotAllowedInContext(Exception):
     """Exception raised when an instruction is not allowed within a specific context.
 

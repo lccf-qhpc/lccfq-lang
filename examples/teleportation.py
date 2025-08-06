@@ -29,7 +29,7 @@ def quantum_teleportation():
     # q1 = shared entanglement qubit
     # q2 = Bob's qubit
 
-    with Circuit(qreg, creg, shots=1000) as c:
+    with Circuit(qreg, creg, shots=1000, verbose=True) as c:
         c >> isa.h(tg=0)
         c >> isa.h(tg=1)
         c >> isa.cx(ct=1, tg=2)

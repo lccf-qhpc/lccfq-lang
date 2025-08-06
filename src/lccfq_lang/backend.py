@@ -20,6 +20,7 @@ from .arch.isa import ISA
 from .arch.mapping import QPUMapping
 from .arch.preconds import Precondition
 from .arch.postconds import Postcondition
+from .arch.error import UnknownCompilerPass
 from .arch.instruction import Instruction
 from .sys.base import QPUConfig
 from .sys.factories.mach import TranspilerFactory
@@ -59,7 +60,6 @@ class QPU:
         self.last_pass = last_pass
         self.__bridge()
 
-
         # Set last compilation/transpilation that produces code
         if not last_pass in [
             "dryrun",
@@ -69,7 +69,7 @@ class QPU:
             "transpiled",
             "executed"
         ]:
-            pass
+            raise UnknownCompilerPass(last_pass)
 
         # Instantiate the LCCF Instruction Set Architecture
         self.isa = ISA("lccfq")
