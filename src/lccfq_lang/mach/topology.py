@@ -48,7 +48,6 @@ class QPUTopology:
             raise BadTopologyType(topo_type)
 
         self.topo_type = self.__type_from_name[topo_type]
-
         self.real_qubits = self.__remove_exclusions(config)
         self.real_connections = self.__filter_connections(config)
 
@@ -144,10 +143,10 @@ class QPUTopology:
         controls = instruction.control_qubits or []
         all_qubits = controls + targets
 
-        if len(all_qubits) == 1:
+        if (len(all_qubits) == 1) or (instruction.symbol == "measure") or (instruction.symbol == "reset"):
             return [instruction]
 
-        if len(all_qubits) != 2:
+        if (len(all_qubits) != 2) and (instruction.symbol != "measure") :
             raise MalformedInstruction(instruction, f"Unknown {len(all_qubits)}-qubit gate.")
 
         q0, q1 = all_qubits

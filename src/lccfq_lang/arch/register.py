@@ -114,6 +114,11 @@ class QRegister:
                 self.qpu.isa.cx(ct=instruction.control_qubits[0], tg=instruction.target_qubits[0]),
                 self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[phi])
             ]
+        ## Case 4: cu
+        elif instruction.symbol == "measure" and len(instruction.target_qubits) > 1:
+            return [
+                self.qpu.isa.measure(tgs=[q]) for q in instruction.target_qubits
+            ]
         else:
             return [instruction]
 
@@ -122,6 +127,7 @@ class QRegister:
         as exceptions. Challenging is performed for a specific QPU.
     
         :param instruction: instruction to challenge
+        :param context: context under which we interpret the challenge
         :return: modified instruction after challenge
         """
 

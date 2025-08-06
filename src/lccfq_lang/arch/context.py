@@ -14,6 +14,8 @@ Contact: nunezco2@illinois.edu
 """
 from .instruction import Instruction
 from .register import QRegister, CRegister, QContext
+from .error import UnknownCompilerPass
+from ..mach.ir import Gate
 from typing import List, Dict
 from itertools import chain
 
@@ -50,6 +52,25 @@ class Circuit:
     def frequencies(self):
         return self.creg.frequencies()
 
+    def _handle_pass(self, program: List[Instruction]|List[Gate], cpass: str) -> None:
+        """Handle compiler pass termination
+
+        :param program: list of entities in different stages of processing composing a program
+        :param cpass: current compilation pass
+        :return: nothing
+        """
+        if self.verbose:
+            print(f"Stage: {cpass}")
+            print(program)
+            print("\n\n")
+
+        if cpass == "executed":
+            result = self.qreg.qpu.exec_circuit(program, self.shots)
+        else:
+            result = {format(i, f"0{self.creg.bit_count}b"): -1 for i in range(2 ** self.creg.bit_count)}
+
+        self.creg.absorb(result)
+
     def __rshift__(self, instr: Instruction):
         """Add a new instruction to the circuit using the `>>` operator. This
         removes verbosity.
@@ -79,21 +100,20 @@ class Circuit:
         :param exc_tb: none
         :return: none
         """
+
         # A dry run only prints the instructions and return all results in -1
-        if self.qreg.qpu.last_pass == "dryrun":
-
-
-            if self.verbose:
-                print("Parsed instructions:")
-                print(self.instructions)
-                print("\n\n")
-
+        if self.qreg.qpu.last_pass == "parsed":
+            self._handle_pass(self.instructions, self.qreg.qpu.last_pass)
             return True
 
         # Step 1: map all instructions from virtual qubits to physical qubits
         mapped =  list(
             map(lambda instr: self.qreg.map(instr), self.instructions)
         )
+
+        if self.qreg.qpu.last_pass == "mapped":
+            self._handle_pass(mapped, self.qreg.qpu.last_pass)
+            return True
 
         # Step 2: introduce any required swaps (more swaps if done after expanding
         swapped = list(
@@ -102,13 +122,20 @@ class Circuit:
             )
         )
 
-        # Step 3: expand special instructions into nicely realizable gates
+        if self.qreg.qpu.last_pass == "swapped":
+            self._handle_pass(swapped, self.qreg.qpu.last_pass)
+            return True
 
+        # Step 3: expand special instructions into nicely realizable gates
         expanded = list(
             chain.from_iterable(
                 map(lambda instr: self.qreg.expand(instr), swapped)
             )
         )
+
+        if self.qreg.qpu.last_pass == "expanded":
+            self._handle_pass(expanded, self.qreg.qpu.last_pass)
+            return True
 
         # Step 4: transpile finally into Gates
         transpiled = list(
@@ -117,27 +144,12 @@ class Circuit:
             )
         )
 
+        if self.qreg.qpu.last_pass == "transpiled":
+            self._handle_pass(transpiled, self.qreg.qpu.last_pass)
+            return True
+
         if self.qreg.qpu.last_pass == "executed":
-            result = self.qreg.qpu.exec_circuit(transpiled)
+            self._handle_pass(transpiled, self.qreg.qpu.last_pass)
+            return True
         else:
-            result = {format(i, f"0{self.creg.bit_count}b"): -1 for i in range(2 ** self.creg.bit_count)}
-
-        if self.verbose:
-            stage_outputs = {
-                "mapped": ("Mapped instructions:", mapped),
-                "swaps": ("Swapped instructions:", swapped),
-                "expanded": ("Expanded instructions:", expanded),
-                "transpiled": ("Transpiled gates:", transpiled),
-                "executed": ("Execution result:", result),
-            }
-
-            label, data = stage_outputs.get(self.qreg.qpu.last_pass, ("Unknown stage", None))
-
-            if data is not None:
-                print(label)
-                print(data)
-                print("\n\n")
-
-        self.creg.absorb(result)
-
-        return True
+            raise UnknownCompilerPass(self.qreg.qpu.last_pass)

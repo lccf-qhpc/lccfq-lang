@@ -37,7 +37,7 @@ class Gate(Command):
         self.params = params
 
     def __repr__(self):
-        return f"G: {self.symbol} @ {self.target_qubits} ctrl by {self.control_qubits} w/ params={self.params}"
+        return f"{self.symbol} @ {self.target_qubits} ctrl by {self.control_qubits} w/ params={self.params}\n"
 
     def to_json(self):
         """Provide a serializable JSON representation of a gate to cross the backend.

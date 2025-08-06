@@ -227,7 +227,7 @@ class ISA:
         inst.instruction_type = InstructionType.DELAYED
         return inst
 
-    def measure(self, tgs=None) -> Instruction:
+    def measure(self, tgs: List[int]=None) -> Instruction:
         """Measure one or multiple qubits. Note that
         measurement modifies the state.
 

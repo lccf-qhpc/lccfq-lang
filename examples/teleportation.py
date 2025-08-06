@@ -18,7 +18,7 @@ def quantum_teleportation():
 
     :return: nothing
     """
-    qpu = QPU(filename="config/default.toml", last_pass="dryrun")
+    qpu = QPU(filename="config/default.toml", last_pass="transpiled")
     qreg = QRegister(3, qpu)
     creg = CRegister(2)
     isa = ISA("lccf")
@@ -54,7 +54,7 @@ def postprocess(freqs: dict) -> dict:
     """Post-processing code to apply corrections to Bob's qubit.
 
     :param freqs: frequencies returned after successful quantum teleportation protocol
-    :return:
+    :return: corrected frequencies after postprocessing
     """
     corrected = {"0": 0, "1": 0}
 

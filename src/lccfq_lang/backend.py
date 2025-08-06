@@ -62,9 +62,9 @@ class QPU:
 
         # Set last compilation/transpilation that produces code
         if not last_pass in [
-            "dryrun",
+            "parsed",
             "mapped",
-            "swaps",
+            "swapped",
             "expanded",
             "transpiled",
             "executed"
@@ -110,17 +110,19 @@ class QPU:
         """
         pass
 
-    def exec_single(self, instruction: Instruction):
+    def exec_single(self, instruction: Instruction, shots: int):
         """Execute a single instruction.
         :param instruction: instruction to execute
+        :param shots: number of shots
         :return: Nothing"""
         pass
 
-    def exec_circuit(self, circuit: List[Gate|Control]) -> Dict[str, int]:
+    def exec_circuit(self, circuit: List[Gate|Control], shots: int) -> Dict[str, int]:
         """
         Execute the result of transpiling a circuit.
 
         :param circuit: a program resulting from a quantum circuit, already transpiled
+        :param shots: number of shots
         :return: the results count from executing a circuit
         """
         return {}
