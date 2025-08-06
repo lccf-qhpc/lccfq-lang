@@ -42,7 +42,7 @@ def test_transpile_single_qubit(symbol, params):
         shots=None
     )
 
-    transpiler = TranspilerFactory().get(mach="pfaff_v1")()
+    transpiler = TranspilerFactory().get(mach="pfaff_v1")
     gates = transpiler.transpile_gate(instr)
 
     print(f"{instr}")

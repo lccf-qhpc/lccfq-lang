@@ -40,7 +40,7 @@ def test_two_qubit_transpilation(symbol, params):
         is_controlled=True
     )
 
-    transpiler = TranspilerFactory().get(mach="pfaff_v1")()
+    transpiler = TranspilerFactory().get(mach="pfaff_v1")
     gates = transpiler.transpile_gate(instr)
 
     assert isinstance(gates, list)

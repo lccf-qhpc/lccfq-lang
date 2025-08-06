@@ -18,7 +18,7 @@ class TranspilerFactory:
     """
     # Internal set of transpiler choices
     __transpilers = {
-        "pfaff_v1": XYiSW
+        "pfaff_v1": XYiSW()
     }
 
     def __init__(self):

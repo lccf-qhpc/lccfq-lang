@@ -70,6 +70,19 @@ class MalformedInstruction(Exception):
         super().__init__(self.message)
 
 
+class UnknownInstruction(Exception):
+    """Exception raised when an instruction is not found in the ISA. We
+    define this to detect possible code injections in the future.
+
+    Attributes:
+        message -- explanation of the error
+    """
+
+    def __init__(self, instruction):
+        self.message = f"Unrecognized instruction - inst: {instruction}"
+        super().__init__(self.message)
+
+
 class NotAllowedInContext(Exception):
     """Exception raised when an instruction is not allowed within a specific context.
 

@@ -193,8 +193,14 @@ class XYiSW(Transpiler):
             ("ry", [PI/2], "t"),
             ("rx", [-PI/2], "t"),
             ("ry", [-PI/2], "t"),
-        ]
+        ],
         # Special case 3: CU needs to be decomposed at a high level
+        "measure": [
+            ("measure", [], "."),
+        ],
+        "reset": [
+            ("reset", [], "."),
+        ]
     }
 
     def __init__(self):

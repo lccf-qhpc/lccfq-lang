@@ -14,7 +14,6 @@ Contact: nunezco2@illinois.edu
 """
 from .instruction import Instruction
 from .register import QRegister, CRegister, QContext
-from ..mach.ir import Gate
 from typing import List, Dict
 from itertools import chain
 

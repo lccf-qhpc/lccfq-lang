@@ -9,7 +9,7 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
-from lccfq_lang import QPU, QRegister, CRegister, Circuit, ISA
+from lccfq_lang import QPU, QRegister, CRegister, Circuit, ISA, QASMSynthesizer
 
 
 def quantum_teleportation():
@@ -18,7 +18,7 @@ def quantum_teleportation():
 
     :return: nothing
     """
-    qpu = QPU(filename="../config/default.qpu")
+    qpu = QPU(filename="config/default.toml", last_pass="dryrun")
     qreg = QRegister(3, qpu)
     creg = CRegister(2)
     isa = ISA("lccf")
@@ -40,6 +40,10 @@ def quantum_teleportation():
         # logic into quantum code to simplify LCCFQ's design. Results must be
         # obtained through post-processing.
         c >> isa.measure(tgs=[2, 1, 0])
+
+    # Synthesize OpenQASM code from the circuit
+    synth = QASMSynthesizer()
+    synth.synth_circuit(circuit=c, path="./teleport.qasm")
 
     freqs = creg.frequencies()
     corrected = postprocess(freqs)

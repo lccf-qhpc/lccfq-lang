@@ -15,6 +15,7 @@ from .backend import QPU
 from .arch.register import QRegister, CRegister
 from .arch.context import Circuit
 from .arch.isa import ISA
+from .arch.synth.qasm import QASMSynthesizer
 
 
 __all__ = [
@@ -22,5 +23,6 @@ __all__ = [
     QRegister,
     CRegister,
     Circuit,
-    ISA
+    ISA,
+    QASMSynthesizer
 ]
