@@ -117,6 +117,6 @@ class QASMSynthesizer:
         """
         return [
             f"OPENQASM 3.0;",
-            f"qubit[{n_qubits}] q;",
-            f"bit[{n_bits}] c;"
+            f"qreg q[{n_qubits}];",
+            f"creg c[{n_bits}];"
         ]

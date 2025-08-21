@@ -27,8 +27,8 @@ def synth():
 def test_qasm_header(synth):
     header = synth.get_qasm_header(3, 3)
     assert "OPENQASM 3.0;" in header[0]
-    assert "qubit[3] q;" in header[1]
-    assert "bit[3] c;" in header[2]
+    assert "qreg q[3];" in header[1]
+    assert "creg c[3];" in header[2]
 
 
 def test_sqg(synth):
