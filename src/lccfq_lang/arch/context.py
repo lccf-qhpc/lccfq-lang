@@ -175,7 +175,6 @@ class Test:
         """
         self.qreg = qreg
         self.accum = accum
-        self.shots = shots
         self.verbose = verbose
         self.instructions: List[Instruction] = list()
 
