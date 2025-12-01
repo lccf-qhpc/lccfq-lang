@@ -13,7 +13,7 @@ Contact: nunezco2@illinois.edu
 
 from .backend import QPU
 from .arch.register import QRegister, CRegister
-from .arch.context import Circuit
+from .arch.context import Circuit, Test
 from .arch.isa import ISA
 from .arch.synth.qasm import QASMSynthesizer
 

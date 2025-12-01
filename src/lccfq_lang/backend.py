@@ -14,7 +14,7 @@ import toml
 from enum import Enum
 from typing import List, Dict
 from .defaults import Mach
-from .mach.ir import Gate, Control
+from .mach.ir import Gate, Control, Test
 from .mach.topology import QPUTopology
 from .arch.isa import ISA
 from .arch.mapping import QPUMapping
@@ -88,7 +88,7 @@ class QPU:
 
     def __bridge(self):
         """
-        Use ZMQ to connect this program instance to a specific communication queue.
+        Use gRPC to connect this program instance to a specific HPC backend.
         :return: Nothing
         """
         pass
@@ -117,7 +117,7 @@ class QPU:
         :return: Nothing"""
         pass
 
-    def exec_circuit(self, circuit: List[Gate|Control], shots: int) -> Dict[str, int]:
+    def exec_circuit(self, circuit: List[Gate|Test|Control], shots: int) -> Dict[str, float]:
         """
         Execute the result of transpiling a circuit.
 

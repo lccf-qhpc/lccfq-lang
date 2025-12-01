@@ -27,6 +27,7 @@ class QContext(Enum):
     """
     CIRCUIT = 0
     TEST = 1
+    CONTROL = 2
     UNKNOWN = -1
 
 

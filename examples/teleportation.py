@@ -9,7 +9,7 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
-from lccfq_lang import QPU, QRegister, CRegister, Circuit, ISA, QASMSynthesizer
+from lccfq_lang import QPU, QRegister, CRegister, Circuit, Test, ISA, QASMSynthesizer
 
 
 def quantum_teleportation():
@@ -35,6 +35,7 @@ def quantum_teleportation():
         c >> isa.cx(ct=1, tg=2)
         c >> isa.cx(ct=0, tg=1)
         c >> isa.h(tg=0)
+        c >> isa.cx(ct=0, tg=2)
 
         # Note that in this case, we have no direct way of applying classical
         # logic into quantum code to simplify LCCFQ's design. Results must be
@@ -48,6 +49,25 @@ def quantum_teleportation():
     freqs = creg.frequencies()
     corrected = postprocess(freqs)
     print(corrected)
+
+    tests = {}
+
+    with Test(qreg, tests) as t:
+        t >> isa.resfreq(tgs=[0], params=[10.0, 3.42, 3.44, 0.01], shots=300)
+        t >> isa.x(tg=2, shots=1000)
+        t >> isa.powrab(tgs=[0], params=[-0.4, 0.4, 20.0E-3], shots=300) # 1 unit = 1 us
+
+    for k, v in tests.items():
+        print(f"test {k}: {v}")
+
+    # What should we see?
+    # tests =
+    # {
+    #   0: { "rfreq": 3.5, "snr": 0.94}
+    #   1: { "0": 0.25, "1": 0.75, "error": 0.12}
+    #   2: { "amp": 2.3, "freq": 0.4, "maxgain": 0.1, "snr": 0.23}
+    # }
+
 
 
 def postprocess(freqs: dict) -> dict:
