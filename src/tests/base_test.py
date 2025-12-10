@@ -45,7 +45,7 @@ def test_qpu_config_initialization(sample_config_dict):
     assert config.exclusions == []
 
     assert isinstance(config.connection, QPUConnection)
-    assert config.connection.ip == "192.168.1.10"
+    assert config.connection.address == "192.168.1.10"
     assert config.connection.port == 4242
 
 

@@ -9,6 +9,7 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
+import grpc
 import toml
 
 from enum import Enum
@@ -26,6 +27,11 @@ from .sys.error import BadQPUConfiguration
 from .arch.instruction import Instruction
 from .sys.base import QPUConfig
 from .sys.factories.mach import TranspilerFactory
+
+from lccfq_backend.utils.log import setup_logger
+from lccfq_backend.api.client import Client
+
+logger = setup_logger("lccfq_lang.QPU")
 
 
 class QPUStatus(Enum):
@@ -45,7 +51,7 @@ class QPUStatus(Enum):
 
 class QPU:
     """A `QPU` determines all interactions with the device through issuing circuit, control and benchmark
-    instructions. Accessing the backend requires submitting requests through a REST interface. An HPC system
+    instructions. Accessing the backend requires submitting requests through a gRPC interface. An HPC system
     will run a single instance of the backend, which will communicate with lccfq_lang through this interface.
 
     New programs will always import this library.
@@ -82,6 +88,27 @@ class QPU:
             self.transpiler = Mach.transpiler
         else:
             self.transpiler = TranspilerFactory().get(self.config.name)
+
+        self.backend_client = None
+
+        # Check if last_pass is executed, in which case ping the backend to test connection.
+        if self.last_pass == "executed":
+            logger.debug("Last pass is 'executed', setting up connection with backend.")
+            con = self.config.connection
+            self.backend_client = Client(name=con.username,
+                                         address=con.address,
+                                         port=con.port,
+                                         clients_cert_dir=con.client_cert_dir,
+                                         server_cert_dir=con.server_cert)
+            logger.info("Pinging QPU backend to check connectivity...")
+            try:
+                if not self.backend_client.ping():
+                    raise ConnectionError("Could not connect to QPU backend.")
+            except grpc.RpcError or ConnectionError as e:
+                logger.error("Could not connect to QPU backend.")
+                raise e
+
+            logger.info("Successfully connected to QPU backend.")
 
     @staticmethod
     def __from_file(filename: str) -> QPUConfig:
@@ -141,6 +168,7 @@ class QPU:
         :param shots: number of shots
         :return: the results count from executing a circuit
         """
+        response = self.backend_client.submit_circuit_task(circuit, shots)
         return {}
 
     def map(self, instruction: Instruction) -> Instruction:
