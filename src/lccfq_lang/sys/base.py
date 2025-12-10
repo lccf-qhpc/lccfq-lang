@@ -15,8 +15,11 @@ from typing import List
 
 @dataclass
 class QPUConnection:
-    ip: str
+    address: str
     port: int
+    username: str
+    client_cert_dir: str
+    server_cert: dir
 
 
 class QPUConfig:
@@ -42,8 +45,11 @@ class QPUConfig:
         network_data = data["network"]
 
         connection = QPUConnection(
-            ip=network_data["ip"],
-            port=network_data["port"]
+            address=network_data["address"],
+            port=network_data["port"],
+            username=network_data["username"],
+            client_cert_dir=network_data["client_cert_dir"],
+            server_cert=network_data["server_cert"]
         )
 
         self.name = spec["name"]
