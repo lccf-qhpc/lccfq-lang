@@ -27,4 +27,4 @@ dev = [
 ]
 
 [tool.uv.sources]
-lccfq-backend = { path = "../lccfq-backend" }
+lccfq-backend = { path = "../lccfq-backend", editable = true }
