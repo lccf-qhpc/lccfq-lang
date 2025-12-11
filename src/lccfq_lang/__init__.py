@@ -24,5 +24,6 @@ __all__ = [
     CRegister,
     Circuit,
     ISA,
-    QASMSynthesizer
+    QASMSynthesizer,
+    Test
 ]

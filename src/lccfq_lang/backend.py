@@ -158,7 +158,8 @@ class QPU:
         :param instruction: instruction to execute
         :param shots: number of shots
         :return: Nothing"""
-        pass
+        response = self.backend_client.submit_test_task(instruction, shots=shots)
+        return response
 
     def exec_circuit(self, circuit: List[Gate|Test|Control], shots: int) -> Dict[str, float]:
         """
