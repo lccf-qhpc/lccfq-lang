@@ -119,10 +119,10 @@ class Circuit:
             self._handle_pass(mapped, self.qpu.last_pass)
             return True
 
-        # Step 2: introduce any required swaps (more swaps if done after expanding
+        # Step 2: introduce any required swaps (more swaps if done after expanding)
         swapped = list(
             chain.from_iterable(
-                map(lambda instr: self.qreg.swaps(instr, self.qpu.isa), self.instructions)
+                map(lambda instr: self.qreg.swaps(instr, self.qpu.isa), mapped)
             )
         )
 
