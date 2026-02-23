@@ -12,13 +12,9 @@ Contact: nunezco2@illinois.edu
 import toml
 import pytest
 
-from types import SimpleNamespace
 from lccfq_lang.backend import QPU, QPUStatus
-from lccfq_lang.sys.base import QPUConfig, QPUConnection
-from lccfq_lang.mach.ir import Gate, Control
+from lccfq_lang.mach.ir import Gate
 from lccfq_lang.arch.instruction import Instruction
-from lccfq_lang.arch.isa import ISA
-from unittest.mock import patch
 
 
 @pytest.fixture

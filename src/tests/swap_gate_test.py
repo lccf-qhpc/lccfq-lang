@@ -14,7 +14,7 @@ from lccfq_lang.arch.instruction import Instruction
 
 def test_swap_gate():
     isa = ISA("lccfq")
-    instr = isa.swap(ct=1, tg=2)
+    instr = isa.swap(tg_a=1, tg_b=2)
 
     assert isinstance(instr, Instruction)
     assert instr.symbol == "swap"

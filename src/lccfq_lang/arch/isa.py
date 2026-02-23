@@ -168,7 +168,6 @@ def tests(gate_names):
 @sq_nopar_gates([ "x", "y", "z", "h", "s", "sdg", "t", "tdg" ])
 @sq_par_gates(["p", "rx", "ry", "rz", "phase", "u2", "u3"])
 @tqc_nopar_gates(["cx", "cy", "cz", "ch"])
-@tqc_par_gates(["cx", "cy", "cz", "ch"])
 @tqc_par_gates(["cp", "crx", "cry", "crz", "cphase", "cu"])
 @tests(["resfreq", "satspect", "powrab", "pispec", "resspect", "dispshift", "rocalib"])
 class ISA:
@@ -186,22 +185,29 @@ class ISA:
     def __init__(self, name: str):
         self.name = name
 
-    def swap(self, ct: int, tg: int) -> Instruction:
+    def swap(self, tg_a: int = 0, tg_b: int = 1, **kwargs) -> Instruction:
         """
         We define explicitly the swap gate due to its significance in the LCCF architecture and how
-        it breaks the general pattern of other gates. We use target and control despite not being
-        controlled to simplify transpilation.
+        it breaks the general pattern of other gates. Both qubits are targets since SWAP is symmetric.
 
-        :param ct: target qubit a
-        :param tg: target qubit b
+        Accepts legacy ``ct``/``tg`` keyword arguments for backward compatibility.
+
+        :param tg_a: first target qubit
+        :param tg_b: second target qubit
         :return: SWAP instruction
         """
+        # Backward compatibility: accept ct=/tg= keyword args
+        if "ct" in kwargs:
+            tg_a = kwargs["ct"]
+        if "tg" in kwargs:
+            tg_b = kwargs["tg"]
+
         return Instruction(
             symbol="swap",
             modifies_state=False,
             is_controlled=False,
-            target_qubits=[tg],
-            control_qubits=[ct],
+            target_qubits=[tg_b],
+            control_qubits=[tg_a],
             parameters=None,
             shots=None,
         )

@@ -233,4 +233,5 @@ class Test:
             self.accum[i] = res
 
 class Control:
+    # TODO: control here means a change to the QPU state or its defining thresholds.
     pass

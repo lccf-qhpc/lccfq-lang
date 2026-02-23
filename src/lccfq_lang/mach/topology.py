@@ -163,7 +163,7 @@ class QPUTopology:
         post_swaps = []
 
         for i in range(len(path) - 2):
-            pre_swaps.append(isa.swap(ct=path[i], tg=path[i + 1]))
+            pre_swaps.append(isa.swap(tg_a=path[i], tg_b=path[i + 1]))
 
         routed_q0 = path[-2]
         routed_q1 = path[-1]
@@ -179,6 +179,6 @@ class QPUTopology:
         )
 
         for i in reversed(range(len(path) - 2)):
-            post_swaps.append(isa.swap(ct=path[i], tg=path[i + 1]))
+            post_swaps.append(isa.swap(tg_a=path[i], tg_b=path[i + 1]))
 
         return pre_swaps + [routed_instr] + post_swaps
