@@ -12,13 +12,44 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
+from dataclasses import dataclass
 from .instruction import Instruction
 from .register import QRegister, CRegister, QContext
 from .error import UnknownCompilerPass
 from ..backend import QPU
-from ..mach.ir import Gate
-from typing import List, Dict
+from typing import List, Dict, Callable, Tuple
 from itertools import chain
+
+
+@dataclass
+class CompilerPass:
+    """A single named stage in the compilation pipeline."""
+    name: str
+    transform: Callable[[list], list]
+
+
+class CompilationPipeline:
+    """An ordered sequence of compiler passes."""
+
+    def __init__(self, passes: List[CompilerPass]):
+        self.passes = passes
+
+    def run(self, instructions: List[Instruction], last_pass: str) -> Tuple[str, list]:
+        """Run passes up to and including last_pass.
+
+        :param instructions: raw instruction list
+        :param last_pass: name of the final pass to execute
+        :return: (pass_name, result) of the last pass that ran
+        """
+        program = instructions
+
+        for cpass in self.passes:
+            program = cpass.transform(program)
+
+            if cpass.name == last_pass:
+                return cpass.name, program
+
+        raise UnknownCompilerPass(last_pass)
 
 
 class Circuit:
@@ -50,13 +81,41 @@ class Circuit:
         self.verbose = verbose
         self.instructions: List[Instruction] = list()
 
+    def _build_pipeline(self) -> CompilationPipeline:
+        """Build the compilation pipeline from the current qreg and qpu.
+
+        :return: a CompilationPipeline ready to run
+        """
+        return CompilationPipeline([
+            CompilerPass("parsed", lambda prog: prog),
+            CompilerPass("mapped", lambda prog: list(
+                map(self.qreg.map, prog)
+            )),
+            CompilerPass("swapped", lambda prog: list(
+                chain.from_iterable(
+                    map(lambda instr: self.qreg.swaps(instr, self.qpu.isa), prog)
+                )
+            )),
+            CompilerPass("expanded", lambda prog: list(
+                chain.from_iterable(
+                    map(self.qreg.expand, prog)
+                )
+            )),
+            CompilerPass("transpiled", lambda prog: list(
+                chain.from_iterable(
+                    map(self.qpu.transpiler.transpile_gate, prog)
+                )
+            )),
+            CompilerPass("executed", lambda prog: prog),
+        ])
+
     def results(self) -> Dict[str, int]:
         return self.creg.data
 
     def frequencies(self):
         return self.creg.frequencies()
 
-    def _handle_pass(self, program: List[Instruction]|List[Gate], cpass: str) -> None:
+    def _handle_pass(self, program: list, cpass: str) -> None:
         """Handle compiler pass termination
 
         :param program: list of entities in different stages of processing composing a program
@@ -99,64 +158,19 @@ class Circuit:
         """Exit the context, equivalent to generating the circuit and sending it to the
         backend. This allows multiple circuits to have multiple backends by construction.
 
-        :param exc_type: none
-        :param exc_val: none
-        :param exc_tb: none
-        :return: none
+        :param exc_type: exception type, if any
+        :param exc_val: exception value, if any
+        :param exc_tb: exception traceback, if any
+        :return: False to propagate exceptions, True on success
         """
+        if exc_type is not None:
+            return False
 
-        # A dry run only prints the instructions and return all results in -1
-        if self.qpu.last_pass == "parsed":
-            self._handle_pass(self.instructions, self.qpu.last_pass)
-            return True
+        pipeline = self._build_pipeline()
+        pass_name, program = pipeline.run(self.instructions, self.qpu.last_pass)
+        self._handle_pass(program, pass_name)
 
-        # Step 1: map all instructions from virtual qubits to physical qubits
-        mapped =  list(
-            map(lambda instr: self.qreg.map(instr), self.instructions)
-        )
-
-        if self.qpu.last_pass == "mapped":
-            self._handle_pass(mapped, self.qpu.last_pass)
-            return True
-
-        # Step 2: introduce any required swaps (more swaps if done after expanding)
-        swapped = list(
-            chain.from_iterable(
-                map(lambda instr: self.qreg.swaps(instr, self.qpu.isa), mapped)
-            )
-        )
-
-        if self.qpu.last_pass == "swapped":
-            self._handle_pass(swapped, self.qpu.last_pass)
-            return True
-
-        # Step 3: expand special instructions into nicely realizable gates
-        expanded = list(
-            chain.from_iterable(
-                map(lambda instr: self.qreg.expand(instr), swapped)
-            )
-        )
-
-        if self.qpu.last_pass == "expanded":
-            self._handle_pass(expanded, self.qpu.last_pass)
-            return True
-
-        # Step 4: transpile finally into Gates
-        transpiled = list(
-            chain.from_iterable(
-                map(lambda instr: self.qpu.transpiler.transpile_gate(instr), expanded)
-            )
-        )
-
-        if self.qpu.last_pass == "transpiled":
-            self._handle_pass(transpiled, self.qpu.last_pass)
-            return True
-
-        if self.qpu.last_pass == "executed":
-            self._handle_pass(transpiled, self.qpu.last_pass)
-            return True
-        else:
-            raise UnknownCompilerPass(self.qpu.last_pass)
+        return True
 
 
 class Test:
