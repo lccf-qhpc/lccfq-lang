@@ -32,7 +32,7 @@ class InstructionType(Enum):
     TEST = 3
 
 
-class Instruction(ABC):
+class Instruction:
     """An Instruction models a mnemonic entity that has executable consequences in
     hardware connected to a QPU. Some instructions may not have a direct executable
     effect, but modulate the execution of other instructions. Instructions are

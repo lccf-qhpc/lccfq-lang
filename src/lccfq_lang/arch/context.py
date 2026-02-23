@@ -85,8 +85,8 @@ class Circuit:
 
         # We try to catch errors as early as they appear, which is
         # when these are included in the code.
-        self.qreg.challenge(instr, QContext.CIRCUIT)
-        self.instructions.append(instr)
+        challenged = self.qreg.challenge(instr, QContext.CIRCUIT)
+        self.instructions.append(challenged)
 
     def __enter__(self):
         """Enter the context
@@ -195,8 +195,8 @@ class Test:
 
         # We try to catch errors as early as they appear, which is
         # when these are included in the code.
-        self.qreg.challenge(instr, QContext.TEST)
-        self.instructions.append(instr)
+        challenged = self.qreg.challenge(instr, QContext.TEST)
+        self.instructions.append(challenged)
 
     def __enter__(self):
         """Enter the context
