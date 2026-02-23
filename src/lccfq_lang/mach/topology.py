@@ -89,10 +89,10 @@ class QPUTopology:
 
     def __test(self, topo_type: QPUTopoType) -> bool:
         __dispatch = {
-            topo_type.LINEAR: self.__test_linear,
+            QPUTopoType.LINEAR: self.__test_linear,
         }
 
-        return __dispatch[topo_type.LINEAR]()
+        return __dispatch[topo_type]()
 
 
     def __remove_exclusions(self, config: QPUConfig):

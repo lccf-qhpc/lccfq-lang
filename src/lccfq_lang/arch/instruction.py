@@ -13,10 +13,9 @@ Contact: nunezco2@illinois.edu
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Set
+from typing import Set, List
 from .preconds import Precondition
 from .postconds import Postcondition
-from typing import List
 
 
 class InstructionType(Enum):

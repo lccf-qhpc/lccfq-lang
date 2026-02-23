@@ -65,7 +65,7 @@ def grover():
             c >> isa.cx(ct=2, tg=3)
             c >> isa.h(tg=3)
 
-            for q in range(n):
+            for q in range(n_qubits):
                 c >> isa.x(tg=q)
                 c >> isa.h(tg=q)
 

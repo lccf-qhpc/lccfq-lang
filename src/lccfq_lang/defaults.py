@@ -10,8 +10,8 @@ License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
 
-from dataclasses import dataclass
-from .sys.factories.mach import TranspilerFactory
+from dataclasses import dataclass, field
+from .mach.transpilers import Transpiler
 
 
 @dataclass
@@ -23,6 +23,11 @@ class Paths:
     qpu_config: str = "./config/default.toml"
 
 
+def _default_transpiler() -> Transpiler:
+    from .sys.factories.mach import TranspilerFactory
+    return TranspilerFactory().get("pfaff_v1")
+
+
 @dataclass
 class Mach:
-    transpiler: str = TranspilerFactory().get("pfaff_v1")
+    transpiler: Transpiler = field(default_factory=_default_transpiler)
