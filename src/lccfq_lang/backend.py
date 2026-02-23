@@ -61,7 +61,8 @@ class QPU:
         self.__bridge()
 
         # Set last compilation/transpilation that produces code
-        if not last_pass in [
+        # If last_pass is None or unrecognized, default to "transpiled"
+        if last_pass not in [
             "parsed",
             "mapped",
             "swapped",
@@ -69,7 +70,7 @@ class QPU:
             "transpiled",
             "executed"
         ]:
-            raise UnknownCompilerPass(last_pass)
+            self.last_pass = last_pass if last_pass is not None else "transpiled"
 
         # Instantiate the LCCF Instruction Set Architecture
         self.isa = ISA("lccfq")

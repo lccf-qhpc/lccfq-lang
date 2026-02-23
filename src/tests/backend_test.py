@@ -78,7 +78,7 @@ def test_qpu_map_instruction_delegation(qpu_instance):
 def test_exec_circuit_returns_empty_dict(qpu_instance):
     qpu = qpu_instance
     dummy_circuit = [Gate(symbol="x", target_qubits=[0], control_qubits=[], params=[])]
-    result = qpu.exec_circuit(dummy_circuit)
+    result = qpu.exec_circuit(dummy_circuit, shots=1)
     assert isinstance(result, dict)
     assert result == {}
 
