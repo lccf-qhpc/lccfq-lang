@@ -11,7 +11,7 @@ Contact: nunezco2@illinois.edu
 """
 from dataclasses import dataclass
 from typing import List
-from ..arch.error import BadQPUConfiguration
+from .error import BadQPUConfiguration
 
 
 @dataclass

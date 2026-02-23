@@ -21,7 +21,8 @@ from .arch.mapping import QPUMapping
 from .arch.register import QRegister
 from .arch.preconds import Precondition
 from .arch.postconds import Postcondition
-from .arch.error import UnknownCompilerPass, BadQPUConfiguration
+from .arch.error import UnknownCompilerPass
+from .sys.error import BadQPUConfiguration
 from .arch.instruction import Instruction
 from .sys.base import QPUConfig
 from .sys.factories.mach import TranspilerFactory
