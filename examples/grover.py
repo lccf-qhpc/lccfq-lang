@@ -14,7 +14,7 @@ from lccfq_lang import QPU, CRegister, Circuit, ISA
 
 
 def grover():
-    qpu = QPU(filename="../config/default.qpu")
+    qpu = QPU(filename="config/default.toml")
     qreg = qpu.qregister(4)
     creg = CRegister(4)
     isa = ISA("lccf")

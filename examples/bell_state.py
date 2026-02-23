@@ -14,7 +14,7 @@ from lccfq_lang import QPU, CRegister, Circuit, ISA
 
 def bell_state():
     # Define the qpu and registers to use
-    qpu = QPU(filename="../config/default.qpu")
+    qpu = QPU(filename="config/default.toml")
     qreg = qpu.qregister(2)
     creg = CRegister(size=2)
     isa = ISA("lccf")

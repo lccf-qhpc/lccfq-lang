@@ -14,7 +14,7 @@ import random
 import numpy as np
 
 from collections import Counter
-from .xeb_util import XEBSimulator
+from xeb_util import XEBSimulator
 from lccfq_lang import QPU, CRegister, Circuit, ISA
 
 
@@ -89,7 +89,7 @@ def compute_xeb(result: dict, ideal_probs: dict, n_qubits: int) -> float:
     return fidelity
 
 
-def xeb_rcs(n_qubits=5, depth=20, shots=1000):
+def xeb_rcs(n_qubits=4, depth=20, shots=1000):
     """Obtain the XEB fidelity using random circuit sampling.
 
     :param n_qubits: number of qubits
@@ -97,7 +97,7 @@ def xeb_rcs(n_qubits=5, depth=20, shots=1000):
     :param shots: number of shots
     :return:
     """
-    qpu = QPU(filename="../config/default.qpu")
+    qpu = QPU(filename="config/default.toml")
     qreg = qpu.qregister(n_qubits)
     creg = CRegister(n_qubits)
     isa = ISA("lccf")

@@ -19,7 +19,7 @@ def deutsch_jozsa(n: int = 3, oracle_type: str = "balanced"):
     :param oracle_type: constant or balanced
     :return: nothing
     """
-    qpu = QPU(filename="../config/default.qpu")
+    qpu = QPU(filename="config/default.toml")
     qreg = qpu.qregister(n + 1)
     creg = CRegister(n)
     isa = ISA("lccf")
