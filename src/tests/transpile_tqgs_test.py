@@ -34,7 +34,7 @@ def test_two_qubit_transpilation(symbol, params):
         symbol=symbol,
         target_qubits=[1],
         control_qubits=[0],
-        parameters=params,
+        params=params,
         shots=None,
         modifies_state=False,
         is_controlled=True

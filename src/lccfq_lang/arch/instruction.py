@@ -43,7 +43,7 @@ class Instruction:
                  is_controlled: bool = False,
                  target_qubits: List[int] = None,
                  control_qubits: List[int] = None,
-                 parameters: List[float] = None,
+                 params: List[float] = None,
                  shots: int = None,
                  ):
         # Basis properties of an instruction
@@ -54,7 +54,7 @@ class Instruction:
         self.is_mapped = False
         self.target_qubits = target_qubits
         self.control_qubits = control_qubits
-        self.parameters = parameters
+        self.params = params
         self.shots = shots
 
         # Pre- and post-conditions of the hoare triplet
@@ -62,7 +62,7 @@ class Instruction:
         self.post: Set[Postcondition] = set()
 
     def __repr__(self):
-        return f"{self.symbol} @ {self.target_qubits} ctrl by {self.control_qubits} w/ params={self.parameters}\n"
+        return f"{self.symbol} @ {self.target_qubits} ctrl by {self.control_qubits} w/ params={self.params}\n"
 
     def add_precondition(self,
                          precondition: Precondition) -> None:

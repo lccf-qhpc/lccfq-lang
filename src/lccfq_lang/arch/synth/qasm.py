@@ -90,8 +90,8 @@ class QASMSynthesizer:
         # OpenQASM 3.0: control(s) target(s)
         qubit_args = cts + tgs
 
-        if instr.parameters:
-            param_str = ", ".join(f"{p:.10g}" for p in instr.parameters) #OpenQASM 3.0: numeric precision convention
+        if instr.params:
+            param_str = ", ".join(f"{p:.10g}" for p in instr.params) #OpenQASM 3.0: numeric precision convention
             gate_call = f"{qasm_op}({param_str})"
         else:
             gate_call = qasm_op

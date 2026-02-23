@@ -38,7 +38,7 @@ def test_sqg(synth):
 
 
 def test_sqg_par(synth):
-    instr = Instruction(symbol="rx", target_qubits=[0], parameters=[1.57])
+    instr = Instruction(symbol="rx", target_qubits=[0], params=[1.57])
     qasm = synth.synth_instruction(instr)
     assert qasm.strip() == "rx(1.57) q[0];"
 

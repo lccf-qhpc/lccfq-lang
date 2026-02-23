@@ -66,7 +66,7 @@ def test_map_instruction(topology):
         is_controlled=True,
         target_qubits=[1],
         control_qubits=[0],
-        parameters=None,
+        params=None,
         shots=None
     )
     mapping = QPUMapping([0, 1], topology)
@@ -86,7 +86,7 @@ def test_swaps_delegation(monkeypatch, topology, isa):
         is_controlled=True,
         target_qubits=[1],
         control_qubits=[0],
-        parameters=None,
+        params=None,
         shots=None
     )
     mapping = QPUMapping([0, 1], topology)

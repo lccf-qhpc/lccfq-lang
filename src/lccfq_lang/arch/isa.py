@@ -32,7 +32,7 @@ def sq_nopar_gates(gate_names):
                         is_controlled=False,
                         target_qubits=[tg],
                         control_qubits=None,
-                        parameters=None,
+                        params=None,
                         shots=shots
                     )
 
@@ -62,7 +62,7 @@ def sq_par_gates(gate_names):
                         is_controlled=False,
                         target_qubits=[tg],
                         control_qubits=None,
-                        parameters=params,
+                        params=params,
                         shots=shots
                     )
 
@@ -91,7 +91,7 @@ def tqc_nopar_gates(gate_names):
                         is_controlled=True,
                         target_qubits=[tg],
                         control_qubits=[ct],
-                        parameters=None,
+                        params=None,
                         shots=shots
                     )
 
@@ -120,7 +120,7 @@ def tqc_par_gates(gate_names):
                         is_controlled=True,
                         target_qubits=[tg],
                         control_qubits=[ct],
-                        parameters=params,
+                        params=params,
                         shots=shots
                     )
 
@@ -149,7 +149,7 @@ def tests(gate_names):
                         is_controlled=False,
                         target_qubits=tgs,
                         control_qubits=None,
-                        parameters=params,
+                        params=params,
                         shots=shots
                     )
 
@@ -208,7 +208,7 @@ class ISA:
             is_controlled=False,
             target_qubits=[tg_b],
             control_qubits=[tg_a],
-            parameters=None,
+            params=None,
             shots=None,
         )
 
@@ -225,7 +225,7 @@ class ISA:
             is_controlled=False,
             target_qubits=tgs,
             control_qubits=None,
-            parameters=None,
+            params=None,
             shots=None,
         )
 
@@ -246,7 +246,7 @@ class ISA:
             is_controlled=False,
             target_qubits=tgs,
             control_qubits=None,
-            parameters=None,
+            params=None,
             shots=None,
         )
 
@@ -268,7 +268,7 @@ class ISA:
             is_controlled=False,
             target_qubits=tgs,
             control_qubits=None,
-            parameters=None,
+            params=None,
             shots=None,
         )
 
@@ -290,7 +290,7 @@ class ISA:
             is_controlled=False,
             target_qubits=None,
             control_qubits=None,
-            parameters=[threshold_fidelity],
+            params=[threshold_fidelity],
             shots=None,
         )
 

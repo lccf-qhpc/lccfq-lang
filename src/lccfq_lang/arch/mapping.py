@@ -63,7 +63,7 @@ class QPUMapping:
             is_controlled=instruction.is_controlled,
             target_qubits=mapped_targets,
             control_qubits=mapped_controls,
-            parameters=instruction.parameters,
+            params=instruction.params,
             shots=instruction.shots
         )
 

@@ -83,8 +83,8 @@ class QRegister:
 
         ## Case 1: u2(phi, lambda)
         if instruction.symbol == "u2":
-            phi = instruction.parameters[0]
-            lbmd = instruction.parameters[1]
+            phi = instruction.params[0]
+            lbmd = instruction.params[1]
 
             return [
                 self.isa.rz(tg=instruction.target_qubits[0], params=[phi]),
@@ -93,9 +93,9 @@ class QRegister:
             ]
         ## Case 2: u3
         elif instruction.symbol == "u3":
-            phi = instruction.parameters[0]
-            theta = instruction.parameters[1]
-            lbmd = instruction.parameters[2]
+            phi = instruction.params[0]
+            theta = instruction.params[1]
+            lbmd = instruction.params[2]
 
             return [
                 self.isa.rz(tg=instruction.target_qubits[0], params=[phi]),
@@ -104,9 +104,9 @@ class QRegister:
             ]
         ## Case 3: cu
         elif instruction.symbol == "cu":
-            phi = instruction.parameters[0]
-            theta = instruction.parameters[1]
-            lbmd = instruction.parameters[2]
+            phi = instruction.params[0]
+            theta = instruction.params[1]
+            lbmd = instruction.params[2]
 
             return [
                 self.isa.rz(tg=instruction.target_qubits[0], params=[lbmd]),
@@ -202,10 +202,10 @@ class QRegister:
             if set(instruction.control_qubits).intersection(instruction.target_qubits):
                 raise MalformedInstruction(instruction, "target and control qubits must be different")
 
-        if instruction.parameters is not None:
-            if not isinstance(instruction.parameters, list):
+        if instruction.params is not None:
+            if not isinstance(instruction.params, list):
                 raise MalformedInstruction(instruction, "parameters must be a list of real values")
-            if not all(isinstance(p, float) for p in instruction.parameters):
+            if not all(isinstance(p, float) for p in instruction.params):
                 raise MalformedInstruction(instruction, "all parameters must be real values")
 
         if instruction.shots is not None:

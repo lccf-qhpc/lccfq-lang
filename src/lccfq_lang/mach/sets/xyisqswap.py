@@ -253,7 +253,7 @@ class XYiSW(Transpiler):
                 symbol=symbol,
                 target_qubits=tq,
                 control_qubits=cq,
-                params=params if params is not None else instruction.parameters,
+                params=params if params is not None else instruction.params,
             )
 
         return gate

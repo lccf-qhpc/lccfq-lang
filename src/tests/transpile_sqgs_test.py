@@ -38,7 +38,7 @@ def test_transpile_single_qubit(symbol, params):
         symbol=symbol,
         target_qubits=[0],
         control_qubits=None,
-        parameters=params,
+        params=params,
         shots=None
     )
 

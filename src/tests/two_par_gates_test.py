@@ -32,5 +32,5 @@ def test_tqcg_par_gen(gate):
     assert instr.is_controlled is True
     assert instr.target_qubits == [1]
     assert instr.control_qubits == [0]
-    assert instr.parameters == [0.0] or instr.parameters == [0.0, 0.1, 0.2, 0.3]
+    assert instr.params == [0.0] or instr.params == [0.0, 0.1, 0.2, 0.3]
     assert instr.shots == 1

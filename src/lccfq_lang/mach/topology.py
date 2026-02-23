@@ -174,7 +174,7 @@ class QPUTopology:
             is_controlled=instruction.is_controlled,
             target_qubits=[routed_q1 if q1 in targets else routed_q0],
             control_qubits=[routed_q0 if q0 in controls else routed_q1],
-            parameters=instruction.parameters,
+            params=instruction.params,
             shots=instruction.shots
         )
 

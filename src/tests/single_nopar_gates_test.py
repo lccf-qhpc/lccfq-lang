@@ -26,5 +26,5 @@ def test_sqg_no_par_gen(gate):
     assert instr.is_controlled is False
     assert instr.target_qubits == [0]
     assert instr.control_qubits is None
-    assert instr.parameters is None
+    assert instr.params is None
     assert instr.shots == 1
