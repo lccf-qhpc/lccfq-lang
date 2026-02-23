@@ -16,10 +16,13 @@ class TranspilerFactory:
     """A transpiler factory that selects a specific transpiler based on
     specification of a machine.
     """
-    # Internal set of transpiler choices
-    __transpilers = {
-        "pfaff_v1": XYiSW()
+    # Registry maps machine names to transpiler classes (not instances)
+    __registry = {
+        "pfaff_v1": XYiSW,
     }
+
+    # Lazily-populated instance cache
+    __instances = {}
 
     def __init__(self):
         # Reserved for future stateful use
@@ -31,4 +34,9 @@ class TranspilerFactory:
         :param mach: name of the architecture.
         :return: the transpiler object.
         """
-        return self.__transpilers[mach]
+        if mach not in self.__instances:
+            if mach not in self.__registry:
+                raise KeyError(f"Unknown machine '{mach}'. Available: {list(self.__registry.keys())}")
+            self.__instances[mach] = self.__registry[mach]()
+
+        return self.__instances[mach]
