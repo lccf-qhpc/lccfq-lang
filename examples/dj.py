@@ -9,7 +9,7 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
-from lccfq_lang import QPU, QRegister, CRegister, Circuit, ISA
+from lccfq_lang import QPU, CRegister, Circuit, ISA
 
 
 def deutsch_jozsa(n: int = 3, oracle_type: str = "balanced"):
@@ -20,11 +20,11 @@ def deutsch_jozsa(n: int = 3, oracle_type: str = "balanced"):
     :return: nothing
     """
     qpu = QPU(filename="../config/default.qpu")
-    qreg = QRegister(n + 1, qpu)
+    qreg = qpu.qregister(n + 1)
     creg = CRegister(n)
     isa = ISA("lccf")
 
-    with Circuit(qreg, creg, shots=1000) as c:
+    with Circuit(qreg, creg, qpu, shots=1000) as c:
         for i in range(n):
             c >> isa.h(tg=i)
 

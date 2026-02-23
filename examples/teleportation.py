@@ -9,7 +9,7 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
-from lccfq_lang import QPU, QRegister, CRegister, Circuit, Test, ISA, QASMSynthesizer
+from lccfq_lang import QPU, CRegister, Circuit, Test, ISA, QASMSynthesizer
 
 
 def quantum_teleportation():
@@ -19,7 +19,7 @@ def quantum_teleportation():
     :return: nothing
     """
     qpu = QPU(filename="config/default.toml", last_pass="transpiled")
-    qreg = QRegister(3, qpu)
+    qreg = qpu.qregister(3)
     creg = CRegister(2)
     isa = ISA("lccf")
 
@@ -29,7 +29,7 @@ def quantum_teleportation():
     # q1 = shared entanglement qubit
     # q2 = Bob's qubit
 
-    with Circuit(qreg, creg, shots=1000, verbose=True) as c:
+    with Circuit(qreg, creg, qpu, shots=1000, verbose=True) as c:
         c >> isa.h(tg=0)
         c >> isa.h(tg=1)
         c >> isa.cx(ct=1, tg=2)
@@ -52,7 +52,7 @@ def quantum_teleportation():
 
     tests = {}
 
-    with Test(qreg, tests) as t:
+    with Test(qreg, tests, qpu) as t:
         t >> isa.resfreq(tgs=[0], params=[10.0, 3.42, 3.44, 0.01], shots=300)
         t >> isa.x(tg=2, shots=1000)
         t >> isa.powrab(tgs=[0], params=[-0.4, 0.4, 20.0E-3], shots=300) # 1 unit = 1 us

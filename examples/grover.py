@@ -10,12 +10,12 @@ License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
 import numpy as np
-from lccfq_lang import QPU, QRegister, CRegister, Circuit, ISA
+from lccfq_lang import QPU, CRegister, Circuit, ISA
 
 
 def grover():
     qpu = QPU(filename="../config/default.qpu")
-    qreg = QRegister(4, qpu)
+    qreg = qpu.qregister(4)
     creg = CRegister(4)
     isa = ISA("lccf")
 
@@ -24,7 +24,7 @@ def grover():
     n_qubits = 4
     n_iterations = int(round((np.pi / 4) * np.sqrt(2**n_qubits)))
 
-    with Circuit(qreg, creg, shots=1000) as c:
+    with Circuit(qreg, creg, qpu, shots=1000) as c:
         for q in range(n_qubits):
             c >> isa.h(tg=q)
 

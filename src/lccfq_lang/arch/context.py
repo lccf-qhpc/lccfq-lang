@@ -15,6 +15,7 @@ Contact: nunezco2@illinois.edu
 from .instruction import Instruction
 from .register import QRegister, CRegister, QContext
 from .error import UnknownCompilerPass
+from ..backend import QPU
 from ..mach.ir import Gate
 from typing import List, Dict
 from itertools import chain
@@ -31,17 +32,20 @@ class Circuit:
     def __init__(self,
                  qreg: QRegister,
                  creg: CRegister,
+                 qpu: QPU = None,
                  shots: int = 1000,
                  verbose=False):
         """Create a new circuit.
 
         :param qreg: quantum register
         :param creg: classical register
+        :param qpu: QPU backend
         :param shots: number of shot to run this circuit for
         :param verbose: trigger verbose output
         """
         self.qreg = qreg
         self.creg = creg
+        self.qpu = qpu
         self.shots = shots
         self.verbose = verbose
         self.instructions: List[Instruction] = list()
@@ -65,7 +69,7 @@ class Circuit:
             print("\n\n")
 
         if cpass == "executed":
-            result = self.qreg.qpu.exec_circuit(program, self.shots)
+            result = self.qpu.exec_circuit(program, self.shots)
         else:
             result = {format(i, f"0{self.creg.bit_count}b"): -1 for i in range(2 ** self.creg.bit_count)}
 
@@ -102,8 +106,8 @@ class Circuit:
         """
 
         # A dry run only prints the instructions and return all results in -1
-        if self.qreg.qpu.last_pass == "parsed":
-            self._handle_pass(self.instructions, self.qreg.qpu.last_pass)
+        if self.qpu.last_pass == "parsed":
+            self._handle_pass(self.instructions, self.qpu.last_pass)
             return True
 
         # Step 1: map all instructions from virtual qubits to physical qubits
@@ -111,19 +115,19 @@ class Circuit:
             map(lambda instr: self.qreg.map(instr), self.instructions)
         )
 
-        if self.qreg.qpu.last_pass == "mapped":
-            self._handle_pass(mapped, self.qreg.qpu.last_pass)
+        if self.qpu.last_pass == "mapped":
+            self._handle_pass(mapped, self.qpu.last_pass)
             return True
 
         # Step 2: introduce any required swaps (more swaps if done after expanding
         swapped = list(
             chain.from_iterable(
-                map(lambda instr: self.qreg.swaps(instr, self.qreg.qpu.isa), self.instructions)
+                map(lambda instr: self.qreg.swaps(instr, self.qpu.isa), self.instructions)
             )
         )
 
-        if self.qreg.qpu.last_pass == "swapped":
-            self._handle_pass(swapped, self.qreg.qpu.last_pass)
+        if self.qpu.last_pass == "swapped":
+            self._handle_pass(swapped, self.qpu.last_pass)
             return True
 
         # Step 3: expand special instructions into nicely realizable gates
@@ -133,26 +137,26 @@ class Circuit:
             )
         )
 
-        if self.qreg.qpu.last_pass == "expanded":
-            self._handle_pass(expanded, self.qreg.qpu.last_pass)
+        if self.qpu.last_pass == "expanded":
+            self._handle_pass(expanded, self.qpu.last_pass)
             return True
 
         # Step 4: transpile finally into Gates
         transpiled = list(
             chain.from_iterable(
-                map(lambda instr: self.qreg.qpu.transpiler.transpile_gate(instr), expanded)
+                map(lambda instr: self.qpu.transpiler.transpile_gate(instr), expanded)
             )
         )
 
-        if self.qreg.qpu.last_pass == "transpiled":
-            self._handle_pass(transpiled, self.qreg.qpu.last_pass)
+        if self.qpu.last_pass == "transpiled":
+            self._handle_pass(transpiled, self.qpu.last_pass)
             return True
 
-        if self.qreg.qpu.last_pass == "executed":
-            self._handle_pass(transpiled, self.qreg.qpu.last_pass)
+        if self.qpu.last_pass == "executed":
+            self._handle_pass(transpiled, self.qpu.last_pass)
             return True
         else:
-            raise UnknownCompilerPass(self.qreg.qpu.last_pass)
+            raise UnknownCompilerPass(self.qpu.last_pass)
 
 
 class Test:
@@ -166,15 +170,18 @@ class Test:
     def __init__(self,
                  qreg: QRegister,
                  accum: Dict[int,Dict[str,float]],
+                 qpu: QPU = None,
                  verbose=False):
         """Create a new test.
 
         :param qreg: quantum register
-        :param shots: number of shot to run this circuit for
+        :param accum: accumulator for test results
+        :param qpu: QPU backend
         :param verbose: trigger verbose output
         """
         self.qreg = qreg
         self.accum = accum
+        self.qpu = qpu
         self.verbose = verbose
         self.instructions: List[Instruction] = list()
 
@@ -208,5 +215,8 @@ class Test:
         :return: nothing
         """
         for i, instruction in enumerate(self.instructions):
-            res = self.qreg.qpu.exec_single(instruction, instruction.shots)
+            res = self.qpu.exec_single(instruction, instruction.shots)
             self.accum[i] = res
+
+class Control:
+    pass

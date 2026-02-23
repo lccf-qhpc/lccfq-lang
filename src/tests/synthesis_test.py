@@ -13,7 +13,7 @@ import pytest
 from lccfq_lang.arch.synth.qasm import QASMSynthesizer
 from lccfq_lang.arch.instruction import Instruction
 from lccfq_lang.arch.context import Circuit
-from lccfq_lang.arch.register import QRegister, CRegister
+from lccfq_lang.arch.register import CRegister
 from lccfq_lang.arch.error import UnknownInstruction
 from lccfq_lang.mach.sets.xyisqswap import XYiSW
 from lccfq_lang.backend import QPU
@@ -72,13 +72,13 @@ def test_unsupported_instruction(synth):
 
 def test_full_circuit_translation(synth):
     qpu = QPU(filename="src/tests/data/testing.toml")
-    qreg = QRegister(2, qpu)
+    qreg = qpu.qregister(2)
     creg = CRegister(2)
 
     assert qpu.transpiler is not None
     assert isinstance(qpu.transpiler, XYiSW), f"Expected XYiSW transpiler, got {type(qpu.transpiler)}"
 
-    with Circuit(qreg, creg) as c:
+    with Circuit(qreg, creg, qpu) as c:
         c >> Instruction(symbol="x", target_qubits=[0])
         c >> Instruction(symbol="cx", control_qubits=[0], target_qubits=[1])
         c >> Instruction(symbol="measure", target_qubits=[0, 1])

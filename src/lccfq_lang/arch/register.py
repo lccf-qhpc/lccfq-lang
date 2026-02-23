@@ -17,7 +17,7 @@ from typing import List, Dict
 from .error import NoMeasurementsAvailable, MalformedInstruction, NotAllowedInContext
 from .instruction import Instruction, InstructionType
 from .isa import ISA
-from ..backend import QPU
+from .mapping import QPUMapping
 
 
 class QContext(Enum):
@@ -39,14 +39,16 @@ class QRegister:
     a representation that can
     """
 
-    def __init__(self, qubit_count: int, qpu: QPU) -> None:
+    def __init__(self, qubit_count: int, mapping: QPUMapping, isa: ISA) -> None:
         """Creates a register with qubits as abstract lines and a mapping to real hardware
 
         :param qubit_count:
-        :param mapping:
+        :param mapping: QPU mapping from virtual to physical qubits
+        :param isa: instruction set architecture
         """
         self.qubit_count = qubit_count
-        self.qpu = qpu
+        self.mapping = mapping
+        self.isa = isa
 
     def map(self, instruction: Instruction) -> Instruction:
         """Forward the mapping of an instruction provided by the QPU.
@@ -54,7 +56,7 @@ class QRegister:
         :param instruction: original instruction
         :return: mapped instruction
         """
-        return self.qpu.map(instruction)
+        return self.mapping.map(instruction)
 
     def swaps(self, instruction: Instruction, isa: ISA) -> List[Instruction]:
         """
@@ -64,7 +66,7 @@ class QRegister:
         :param isa: instruction set architecture
         :return: list of instructions with potential swaps
         """
-        return self.qpu.mapping.swaps(instruction, isa)
+        return self.mapping.swaps(instruction, isa)
 
     def expand(self, instruction: Instruction) -> List[Instruction]:
         """
@@ -75,7 +77,7 @@ class QRegister:
         :return: expanded instruction list
         """
         # Step 1: map the instruction from virtual to physical qubits
-        mapped_instruction = self.qpu.mapping.map(instruction)
+        mapped_instruction = self.mapping.map(instruction)
 
         # Step 2: we have instructions that must be themselves expanded before SWAPS are introduced
 
@@ -85,9 +87,9 @@ class QRegister:
             lbmd = instruction.parameters[1]
 
             return [
-                self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[phi]),
-                self.qpu.isa.ry(tg=instruction.target_qubits[0], params=[np.pi/2]),
-                self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[lbmd])
+                self.isa.rz(tg=instruction.target_qubits[0], params=[phi]),
+                self.isa.ry(tg=instruction.target_qubits[0], params=[np.pi/2]),
+                self.isa.rz(tg=instruction.target_qubits[0], params=[lbmd])
             ]
         ## Case 2: u3
         elif instruction.symbol == "u3":
@@ -96,9 +98,9 @@ class QRegister:
             lbmd = instruction.parameters[2]
 
             return [
-                self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[phi]),
-                self.qpu.isa.ry(tg=instruction.target_qubits[0], params=[theta]),
-                self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[lbmd])
+                self.isa.rz(tg=instruction.target_qubits[0], params=[phi]),
+                self.isa.ry(tg=instruction.target_qubits[0], params=[theta]),
+                self.isa.rz(tg=instruction.target_qubits[0], params=[lbmd])
             ]
         ## Case 3: cu
         elif instruction.symbol == "cu":
@@ -107,18 +109,18 @@ class QRegister:
             lbmd = instruction.parameters[2]
 
             return [
-                self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[lbmd]),
-                self.qpu.isa.ry(tg=instruction.target_qubits[0], params=[theta/2]),
-                self.qpu.isa.cx(ct=instruction.control_qubits[0], tg=instruction.target_qubits[0]),
-                self.qpu.isa.ry(tg=instruction.target_qubits[0], params=[-theta/2]),
-                self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[-(phi + lbmd)]),
-                self.qpu.isa.cx(ct=instruction.control_qubits[0], tg=instruction.target_qubits[0]),
-                self.qpu.isa.rz(tg=instruction.target_qubits[0], params=[phi])
+                self.isa.rz(tg=instruction.target_qubits[0], params=[lbmd]),
+                self.isa.ry(tg=instruction.target_qubits[0], params=[theta/2]),
+                self.isa.cx(ct=instruction.control_qubits[0], tg=instruction.target_qubits[0]),
+                self.isa.ry(tg=instruction.target_qubits[0], params=[-theta/2]),
+                self.isa.rz(tg=instruction.target_qubits[0], params=[-(phi + lbmd)]),
+                self.isa.cx(ct=instruction.control_qubits[0], tg=instruction.target_qubits[0]),
+                self.isa.rz(tg=instruction.target_qubits[0], params=[phi])
             ]
         ## Case 4: cu
         elif instruction.symbol == "measure" and len(instruction.target_qubits) > 1:
             return [
-                self.qpu.isa.measure(tgs=[q]) for q in instruction.target_qubits
+                self.isa.measure(tgs=[q]) for q in instruction.target_qubits
             ]
         else:
             return [instruction]
@@ -164,13 +166,13 @@ class QRegister:
         return instr
 
     def all(self):
-        return self.qpu.mapping.virtual_qubits
+        return self.mapping.virtual_qubits
 
     def but(self, minus: List[int]=None):
         if minus is None:
-            return self.qpu.mapping.virtual_qubits
+            return self.mapping.virtual_qubits
         else:
-            return list(set(self.qpu.mapping.virtual_qubits) - set(minus))
+            return list(set(self.mapping.virtual_qubits) - set(minus))
 
     @staticmethod
     def _is_well_formed_instruction(instruction: Instruction) -> bool:

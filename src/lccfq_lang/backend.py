@@ -18,6 +18,7 @@ from .mach.ir import Gate, Control, Test
 from .mach.topology import QPUTopology
 from .arch.isa import ISA
 from .arch.mapping import QPUMapping
+from .arch.register import QRegister
 from .arch.preconds import Precondition
 from .arch.postconds import Postcondition
 from .arch.error import UnknownCompilerPass, BadQPUConfiguration
@@ -115,6 +116,14 @@ class QPU:
         :return: validity of postcondition after QPU state altered by instruction
         """
         pass
+
+    def qregister(self, qubit_count: int) -> QRegister:
+        """Create a QRegister bound to this QPU's mapping and ISA.
+
+        :param qubit_count: number of qubits
+        :return: a new QRegister
+        """
+        return QRegister(qubit_count, self.mapping, self.isa)
 
     def exec_single(self, instruction: Instruction, shots: int):
         """Execute a single instruction.
