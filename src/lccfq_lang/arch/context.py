@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from .instruction import Instruction
 from .register import QRegister, CRegister, QContext
 from .error import UnknownCompilerPass
-from ..backend import QPU
+from .protocol import Backend
 from typing import List, Dict, Callable, Tuple
 from itertools import chain
 
@@ -63,7 +63,7 @@ class Circuit:
     def __init__(self,
                  qreg: QRegister,
                  creg: CRegister,
-                 qpu: QPU = None,
+                 qpu: Backend = None,
                  shots: int = 1000,
                  verbose=False):
         """Create a new circuit.
@@ -184,7 +184,7 @@ class Test:
     def __init__(self,
                  qreg: QRegister,
                  accum: Dict[int,Dict[str,float]],
-                 qpu: QPU = None,
+                 qpu: Backend = None,
                  verbose=False):
         """Create a new test.
 
