@@ -20,7 +20,7 @@ from .arch.isa import ISA
 from .arch.mapping import QPUMapping
 from .arch.preconds import Precondition
 from .arch.postconds import Postcondition
-from .arch.error import UnknownCompilerPass
+from .arch.error import UnknownCompilerPass, BadQPUConfiguration
 from .arch.instruction import Instruction
 from .sys.base import QPUConfig
 from .sys.factories.mach import TranspilerFactory
@@ -83,7 +83,12 @@ class QPU:
 
     @staticmethod
     def __from_file(filename: str) -> QPUConfig:
-        data = toml.load(filename)
+        try:
+            data = toml.load(filename)
+        except FileNotFoundError:
+            raise BadQPUConfiguration("valid config file", f"file not found: {filename}")
+        except toml.TomlDecodeError as e:
+            raise BadQPUConfiguration("valid TOML", f"parse error in {filename}: {e}")
 
         return QPUConfig(data)
 

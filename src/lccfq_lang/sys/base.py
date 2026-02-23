@@ -11,6 +11,7 @@ Contact: nunezco2@illinois.edu
 """
 from dataclasses import dataclass
 from typing import List
+from ..arch.error import BadQPUConfiguration
 
 
 @dataclass
@@ -36,10 +37,23 @@ class QPUConfig:
 
         :param data: data containing the full specification
         """
+        try:
+            spec = data["qpu"]
+            network_data = data["network"]
+        except KeyError as e:
+            raise BadQPUConfiguration("sections [qpu] and [network]", f"missing section {e}")
 
+        required_qpu = ["name", "location", "topology", "qubit_count", "qubits", "couplings", "exclusions"]
+        missing_qpu = [k for k in required_qpu if k not in spec]
 
-        spec = data["qpu"]
-        network_data = data["network"]
+        if missing_qpu:
+            raise BadQPUConfiguration(f"qpu fields {required_qpu}", f"missing: {missing_qpu}")
+
+        required_net = ["ip", "port"]
+        missing_net = [k for k in required_net if k not in network_data]
+
+        if missing_net:
+            raise BadQPUConfiguration(f"network fields {required_net}", f"missing: {missing_net}")
 
         connection = QPUConnection(
             ip=network_data["ip"],
