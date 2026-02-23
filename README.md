@@ -1,6 +1,6 @@
 # lccfq-lang
 
-A Python library for programming quantum processing units (QPUs) within the Lambda Calculus Compiler Framework (LCCF). It provides a high-level DSL for defining quantum circuits, a multi-stage compilation pipeline that maps virtual circuits to physical hardware, and OpenQASM 3.0 synthesis.
+A Python library for programming quantum processing units (QPUs) within the Leadership Class Compute Facility Project (LCCF). It provides a high-level DSL for defining quantum circuits, a multi-stage compilation pipeline that maps virtual circuits to physical hardware, and OpenQASM 3.0 synthesis.
 
 ## Requirements
 
