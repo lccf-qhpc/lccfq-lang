@@ -9,7 +9,7 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
-from lccfq_lang import QPU, CRegister, Circuit, Test, ISA, QASMSynthesizer
+from lccfq_lang import QPU, CRegister, Circuit, Test, QASMSynthesizer
 
 
 def quantum_teleportation():
@@ -21,7 +21,6 @@ def quantum_teleportation():
     qpu = QPU(filename="config/default.toml", last_pass="transpiled")
     qreg = qpu.qregister(3)
     creg = CRegister(2)
-    isa = ISA("lccf")
 
     # Setup:
     #
@@ -30,17 +29,17 @@ def quantum_teleportation():
     # q2 = Bob's qubit
 
     with Circuit(qreg, creg, qpu, shots=1000, verbose=True) as c:
-        c >> isa.h(tg=0)
-        c >> isa.h(tg=1)
-        c >> isa.cx(ct=1, tg=2)
-        c >> isa.cx(ct=0, tg=1)
-        c >> isa.h(tg=0)
-        c >> isa.cx(ct=0, tg=2)
+        c >> qpu.isa.h(tg=0)
+        c >> qpu.isa.h(tg=1)
+        c >> qpu.isa.cx(ct=1, tg=2)
+        c >> qpu.isa.cx(ct=0, tg=1)
+        c >> qpu.isa.h(tg=0)
+        c >> qpu.isa.cx(ct=0, tg=2)
 
         # Note that in this case, we have no direct way of applying classical
         # logic into quantum code to simplify LCCFQ's design. Results must be
         # obtained through post-processing.
-        c >> isa.measure(tgs=[2, 1, 0])
+        c >> qpu.isa.measure(tgs=[2, 1, 0])
 
     # Synthesize OpenQASM code from the circuit
     synth = QASMSynthesizer()
@@ -53,9 +52,9 @@ def quantum_teleportation():
     tests = {}
 
     with Test(qreg, tests, qpu) as t:
-        t >> isa.resfreq(tgs=[0], params=[10.0, 3.42, 3.44, 0.01], shots=300)
-        t >> isa.x(tg=2, shots=1000)
-        t >> isa.powrab(tgs=[0], params=[-0.4, 0.4, 20.0E-3], shots=300) # 1 unit = 1 us
+        t >> qpu.isa.resfreq(tgs=[0], params=[10.0, 3.42, 3.44, 0.01], shots=300)
+        t >> qpu.isa.x(tg=2, shots=1000)
+        t >> qpu.isa.powrab(tgs=[0], params=[-0.4, 0.4, 20.0E-3], shots=300) # 1 unit = 1 us
 
     for k, v in tests.items():
         print(f"test {k}: {v}")

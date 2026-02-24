@@ -9,7 +9,7 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
-from lccfq_lang import QPU, CRegister, Circuit, ISA
+from lccfq_lang import QPU, CRegister, Circuit
 
 
 def deutsch_jozsa(n: int = 3, oracle_type: str = "balanced"):
@@ -22,14 +22,13 @@ def deutsch_jozsa(n: int = 3, oracle_type: str = "balanced"):
     qpu = QPU(filename="config/default.toml")
     qreg = qpu.qregister(n + 1)
     creg = CRegister(n)
-    isa = ISA("lccf")
 
     with Circuit(qreg, creg, qpu, shots=1000) as c:
         for i in range(n):
-            c >> isa.h(tg=i)
+            c >> qpu.isa.h(tg=i)
 
-        c >> isa.x(tg=n)
-        c >> isa.h(tg=n)
+        c >> qpu.isa.x(tg=n)
+        c >> qpu.isa.h(tg=n)
 
         if oracle_type == "constant":
             # Nothing to be done for identity function
@@ -38,14 +37,14 @@ def deutsch_jozsa(n: int = 3, oracle_type: str = "balanced"):
         elif oracle_type == "balanced":
             # Standard XOR oracle
             for i in range(n):
-                c >> isa.cx(ct=i, tg=n)
+                c >> qpu.isa.cx(ct=i, tg=n)
         else:
             raise ValueError("oracle_type must be 'constant' or 'balanced'")
 
         for i in range(n):
-            c >> isa.h(tg=i)
+            c >> qpu.isa.h(tg=i)
 
-        c >> isa.measure(tgs=list(range(n)))
+        c >> qpu.isa.measure(tgs=list(range(n)))
 
     result = creg.frequencies()
 

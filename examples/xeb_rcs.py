@@ -15,7 +15,7 @@ import numpy as np
 
 from collections import Counter
 from xeb_util import XEBSimulator
-from lccfq_lang import QPU, CRegister, Circuit, ISA
+from lccfq_lang import QPU, CRegister, Circuit
 
 
 def random_sqg(isa, qidx):
@@ -100,14 +100,13 @@ def xeb_rcs(n_qubits=4, depth=20, shots=1000):
     qpu = QPU(filename="config/default.toml")
     qreg = qpu.qregister(n_qubits)
     creg = CRegister(n_qubits)
-    isa = ISA("lccf")
 
-    rcs_circuit = generate_rand_inst(n_qubits, depth, isa)
+    rcs_circuit = generate_rand_inst(n_qubits, depth, qpu.isa)
 
     with Circuit(qreg, creg, qpu, shots=shots) as c:
         for gate in rcs_circuit:
             c >> gate
-        c >> isa.measure(tgs=list(range(n_qubits)))
+        c >> qpu.isa.measure(tgs=list(range(n_qubits)))
 
     result = creg.frequencies()
 
