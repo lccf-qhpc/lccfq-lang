@@ -52,7 +52,7 @@ class QPUConfig:
         if missing_qpu:
             raise BadQPUConfiguration(f"qpu fields {required_qpu}", f"missing: {missing_qpu}")
 
-        required_net = ["ip", "port"]
+        required_net = ["address", "port"]
         missing_net = [k for k in required_net if k not in network_data]
 
         if missing_net:
