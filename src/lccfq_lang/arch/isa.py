@@ -169,7 +169,7 @@ def tests(gate_names):
 @sq_par_gates(["p", "rx", "ry", "rz", "phase", "u2", "u3"])
 @tqc_nopar_gates(["cx", "cy", "cz", "ch"])
 @tqc_par_gates(["cp", "crx", "cry", "crz", "cphase", "cu"])
-@tests(["resfreq", "satspect", "powrab", "pispec", "resspect", "dispshift", "rocalib"])
+@tests(["resfreq", "satspect", "power_rabi", "pispec", "resspect", "dispshift", "rocalib"])
 class ISA:
     """The Instruction Set Architecture comprises all possible operations that LCCF hardware
     will be able to make.
