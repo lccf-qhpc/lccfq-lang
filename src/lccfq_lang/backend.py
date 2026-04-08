@@ -10,6 +10,7 @@ License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
 import grpc
+import time
 import toml
 
 from enum import Enum
@@ -163,16 +164,34 @@ class QPU:
         response = self.backend_client.submit_test_task(instruction, shots=shots)
         return response
 
-    def exec_circuit(self, circuit: List[Gate|Test|Control], shots: int) -> Dict[str, float]:
+    def exec_circuit(self, circuit: List[Gate|Test|Control], shots: int,
+                     poll_interval: float = 1.0, timeout: float = 300.0) -> Dict[str, int]:
         """
         Execute the result of transpiling a circuit.
 
         :param circuit: a program resulting from a quantum circuit, already transpiled
         :param shots: number of shots
+        :param poll_interval: seconds between result polls
+        :param timeout: maximum seconds to wait for result
         :return: the results count from executing a circuit
         """
         response = self.backend_client.submit_circuit_task(circuit, shots)
-        return {}
+        if response.success is not True:
+            raise RuntimeError(f"Execution failed: {response.message}")
+
+        task_id = response.task_id
+        logger.info(f"Circuit task submitted with task_id={task_id}. Polling for result...")
+
+        elapsed = 0.0
+        while elapsed < timeout:
+            result_response = self.backend_client.get_result(task_id)
+            if result_response.found:
+                logger.info(f"Result ready for task_id={task_id}")
+                return dict(result_response.circuit_result.distribution)
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+
+        raise TimeoutError(f"Timed out waiting for result of task {task_id} after {timeout}s")
 
     def map(self, instruction: Instruction) -> Instruction:
         """Forward the mapping of an instruction provided by the internal mapping.
