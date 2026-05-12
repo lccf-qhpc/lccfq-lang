@@ -17,8 +17,8 @@ from lccfq_lang.lang.preparation import (
     prepare_basis,
     prepare_uniform,
     prepare_state,
-    _ucr,
 )
+from lccfq_lang.lang._common import _ucr
 
 
 @pytest.fixture
@@ -394,20 +394,20 @@ class TestBlockFactoryIntegration:
 
     def test_dispatch_prepare_basis(self, factory):
         from lccfq_lang.lang.blocks import BlockType
-        result = factory.block(BlockType.PREPAREBASIS, [0, 1], bitstring="10")
+        result = factory.block(BlockType.PREPARE_BASIS, [0, 1], bitstring="10")
         assert len(result) == 1
         assert result[0].symbol == "x"
 
     def test_dispatch_prepare_uniform(self, factory):
         from lccfq_lang.lang.blocks import BlockType
-        result = factory.block(BlockType.PREPAREUNIFORM, [0, 1, 2])
+        result = factory.block(BlockType.PREPARE_UNIFORM, [0, 1, 2])
         assert len(result) == 3
         assert all(i.symbol == "h" for i in result)
 
     def test_dispatch_prepare_state(self, factory):
         from lccfq_lang.lang.blocks import BlockType
         result = factory.block(
-            BlockType.PREPARESTATE, [0, 1],
+            BlockType.PREPARE_STATE, [0, 1],
             state=[0, 1, 0, 0]
         )
         assert len(result) > 0
