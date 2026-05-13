@@ -18,7 +18,6 @@ from .register import QRegister, CRegister, QContext
 from .error import UnknownCompilerPass
 from .protocol import Backend
 from typing import List, Dict, Callable, Tuple
-from itertools import chain
 
 
 @dataclass
@@ -80,34 +79,7 @@ class Circuit:
         self.shots = shots
         self.verbose = verbose
         self.instructions: List[Instruction] = list()
-
-    def _build_pipeline(self) -> CompilationPipeline:
-        """Build the compilation pipeline from the current qreg and qpu.
-
-        :return: a CompilationPipeline ready to run
-        """
-        return CompilationPipeline([
-            CompilerPass("parsed", lambda prog: prog),
-            CompilerPass("mapped", lambda prog: list(
-                map(self.qreg.map, prog)
-            )),
-            CompilerPass("swapped", lambda prog: list(
-                chain.from_iterable(
-                    map(lambda instr: self.qreg.swaps(instr, self.qpu.isa), prog)
-                )
-            )),
-            CompilerPass("expanded", lambda prog: list(
-                chain.from_iterable(
-                    map(self.qreg.expand, prog)
-                )
-            )),
-            CompilerPass("transpiled", lambda prog: list(
-                chain.from_iterable(
-                    map(self.qpu.transpiler.transpile_gate, prog)
-                )
-            )),
-            CompilerPass("executed", lambda prog: prog),
-        ])
+        self._opt_records = []
 
     def results(self) -> Dict[str, int]:
         return self.creg.data
@@ -166,10 +138,28 @@ class Circuit:
         if exc_type is not None:
             return False
 
-        pipeline = self._build_pipeline()
-        pass_name, program = pipeline.run(self.instructions, self.qpu.last_pass)
-        self._handle_pass(program, pass_name)
+        last_pass = self.qpu.last_pass
 
+        if last_pass == "parsed":
+            self._handle_pass(self.instructions, "parsed")
+            return True
+
+        # Deferred imports: keep arch/ free of eager opt/ dependency at module load.
+        from lccfq_lang.opt import PassContext, PassManager
+        from lccfq_lang.opt.builtin.lower_passes import (
+            build_lowering_groups, slice_groups_for,
+        )
+
+        groups = slice_groups_for(last_pass, build_lowering_groups(self.qreg, self.qpu))
+        ctx = PassContext(
+            qpu_config=self.qpu.config,
+            isa=self.qpu.isa,
+            mapping=self.qpu.mapping,
+            topology=self.qpu.mapping.topology,
+        )
+        program, records = PassManager(groups).run(self.instructions, ctx)
+        self._opt_records = records
+        self._handle_pass(program, last_pass)
         return True
 
 
