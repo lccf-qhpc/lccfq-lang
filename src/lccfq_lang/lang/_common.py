@@ -41,3 +41,35 @@ def _ucr(isa: ISA, gate_type, target, controls, angles) -> List[Instruction]:
     result.append(isa.cx(ct=controls[-1], tg=target))
 
     return result
+
+
+def _mcz(qubits: List[int]) -> Instruction:
+    """Build a multi-controlled-Z over ``qubits``.
+
+    MCZ is symmetric in its qubits; we conventionally take the last as the
+    "target" and the rest as controls. For n=1 the result is a bare Z; for
+    n=2 it is a CZ. For n>=3 the Instruction carries a multi-element
+    control list and is left for the backend / transpiler to decompose.
+    """
+    n = len(qubits)
+    if n < 1:
+        raise ValueError("_mcz requires at least 1 qubit")
+    if n == 1:
+        return Instruction(
+            symbol="z",
+            modifies_state=False,
+            is_controlled=False,
+            target_qubits=[qubits[0]],
+            control_qubits=None,
+            params=None,
+            shots=None,
+        )
+    return Instruction(
+        symbol="z",
+        modifies_state=False,
+        is_controlled=True,
+        target_qubits=[qubits[-1]],
+        control_qubits=list(qubits[:-1]),
+        params=None,
+        shots=None,
+    )
