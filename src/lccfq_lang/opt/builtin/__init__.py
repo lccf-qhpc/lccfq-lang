@@ -12,19 +12,22 @@ Contact: nunezco2@illinois.edu
 from .lower_passes import (
     MappedPass,
     SwappedPass,
-    ExpandedPass,
     TranspiledPass,
     build_lowering_groups,
     slice_groups_for,
     LOWERING_STAGES,
 )
+from .lower_universal import LowerU2, LowerU3, LowerCU, FanoutMeasure
 
 __all__ = [
     "MappedPass",
     "SwappedPass",
-    "ExpandedPass",
     "TranspiledPass",
     "build_lowering_groups",
     "slice_groups_for",
     "LOWERING_STAGES",
+    "LowerU2",
+    "LowerU3",
+    "LowerCU",
+    "FanoutMeasure",
 ]

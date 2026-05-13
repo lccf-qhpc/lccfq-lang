@@ -10,7 +10,6 @@ License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
 import copy
-import numpy as np
 
 from enum import Enum
 from typing import List, Dict
@@ -69,61 +68,25 @@ class QRegister:
         return self.mapping.swaps(instruction, isa)
 
     def expand(self, instruction: Instruction) -> List[Instruction]:
+        """Expand a single instruction into its primitive sequence.
+
+        .. deprecated:: Phase 1
+            Direct calls to QRegister.expand are deprecated. Decomposition is
+            now performed by the lower_expand PassGroup. This shim will be
+            removed in a future release.
         """
-        Apply an instruction to the register. We obtain a list of new instructions before
-        performing swaps on the gates. We assume an instruction has already been challenged.
+        # Local import: avoids circular dependency between arch.register and opt.builtin.
+        from lccfq_lang.opt.builtin.lower_universal import (
+            LowerU2, LowerU3, LowerCU, FanoutMeasure,
+        )
+        from lccfq_lang.opt.pass_base import PassContext
 
-        :param instruction: instruction to apply
-        :return: expanded instruction list
-        """
-        # Step 1: map the instruction from virtual to physical qubits
-        mapped_instruction = self.mapping.map(instruction)
+        ctx = PassContext(isa=self.isa, mapping=self.mapping)
+        program = [instruction]
 
-        # Step 2: we have instructions that must be themselves expanded before SWAPS are introduced
-
-        ## Case 1: u2(phi, lambda)
-        if instruction.symbol == "u2":
-            phi = instruction.params[0]
-            lbmd = instruction.params[1]
-
-            return [
-                self.isa.rz(tg=instruction.target_qubits[0], params=[phi]),
-                self.isa.ry(tg=instruction.target_qubits[0], params=[np.pi/2]),
-                self.isa.rz(tg=instruction.target_qubits[0], params=[lbmd])
-            ]
-        ## Case 2: u3
-        elif instruction.symbol == "u3":
-            phi = instruction.params[0]
-            theta = instruction.params[1]
-            lbmd = instruction.params[2]
-
-            return [
-                self.isa.rz(tg=instruction.target_qubits[0], params=[phi]),
-                self.isa.ry(tg=instruction.target_qubits[0], params=[theta]),
-                self.isa.rz(tg=instruction.target_qubits[0], params=[lbmd])
-            ]
-        ## Case 3: cu
-        elif instruction.symbol == "cu":
-            phi = instruction.params[0]
-            theta = instruction.params[1]
-            lbmd = instruction.params[2]
-
-            return [
-                self.isa.rz(tg=instruction.target_qubits[0], params=[lbmd]),
-                self.isa.ry(tg=instruction.target_qubits[0], params=[theta/2]),
-                self.isa.cx(ct=instruction.control_qubits[0], tg=instruction.target_qubits[0]),
-                self.isa.ry(tg=instruction.target_qubits[0], params=[-theta/2]),
-                self.isa.rz(tg=instruction.target_qubits[0], params=[-(phi + lbmd)]),
-                self.isa.cx(ct=instruction.control_qubits[0], tg=instruction.target_qubits[0]),
-                self.isa.rz(tg=instruction.target_qubits[0], params=[phi])
-            ]
-        ## Case 4: cu
-        elif instruction.symbol == "measure" and len(instruction.target_qubits) > 1:
-            return [
-                self.isa.measure(tgs=[q]) for q in instruction.target_qubits
-            ]
-        else:
-            return [instruction]
+        for pass_cls in (LowerU2, LowerU3, LowerCU, FanoutMeasure):
+            program = pass_cls(self.isa).run(program, ctx)
+        return program
 
     def challenge(self, instruction: Instruction, context: QContext) -> Instruction:
         """Ensure an instruction is valid and well-formed. Errors are raised

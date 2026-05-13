@@ -5,7 +5,7 @@ Date: 2026-05-13
 Version: 1.0
 Description:
     Built-in lowering passes for the lccfq-lang compilation pipeline.
-    Provides MappedPass, SwappedPass, ExpandedPass, TranspiledPass,
+    Provides MappedPass, SwappedPass, TranspiledPass,
     the build_lowering_groups factory, and the slice_groups_for slicer.
 
 License: Apache 2.0
@@ -21,6 +21,7 @@ from lccfq_lang.arch.error import UnknownCompilerPass
 from lccfq_lang.mach.transpilers import Transpiler
 from lccfq_lang.opt.pass_base import Pass, PassContext
 from lccfq_lang.opt.manager import PassGroup
+from .lower_universal import LowerU2, LowerU3, LowerCU, FanoutMeasure
 
 
 LOWERING_STAGES: tuple[str, ...] = ("mapped", "swapped", "expanded", "transpiled")
@@ -55,19 +56,6 @@ class SwappedPass(Pass):
         ))
 
 
-class ExpandedPass(Pass):
-    """Expands composite instructions into primitive gate sequences."""
-
-    name = "expanded"
-    applies_to = "arch"
-
-    def __init__(self, qreg: QRegister) -> None:
-        self._qreg = qreg
-
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
-        return list(chain.from_iterable(map(self._qreg.expand, program)))
-
-
 class TranspiledPass(Pass):
     """Transpiles arch instructions to native machine gates.
 
@@ -94,7 +82,16 @@ def build_lowering_groups(qreg: QRegister, qpu) -> list[PassGroup]:
     return [
         PassGroup("lower_map",       "linear", [MappedPass(qreg)]),
         PassGroup("lower_swap",      "linear", [SwappedPass(qreg, qpu.isa)]),
-        PassGroup("lower_expand",    "linear", [ExpandedPass(qreg)]),
+        PassGroup(
+            "lower_expand",
+            "linear",
+            [
+                LowerU2(qpu.isa),
+                LowerU3(qpu.isa),
+                LowerCU(qpu.isa),
+                FanoutMeasure(qpu.isa),
+            ],
+        ),
         PassGroup("lower_transpile", "linear", [TranspiledPass(qpu.transpiler)]),
     ]
 
