@@ -1,0 +1,62 @@
+"""
+Filename: pass_base.py
+Author: Santiago Nunez-Corrales
+Date: 2026-05-13
+Version: 1.0
+Description:
+    Abstract base classes and data structures for the optimization pass
+    infrastructure in lccfq-lang.
+
+License: Apache 2.0
+Contact: nunezco2@illinois.edu
+"""
+from __future__ import annotations
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any, List, Literal, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from lccfq_lang.sys.base import QPUConfig
+    from lccfq_lang.arch.isa import ISA
+    from lccfq_lang.arch.mapping import QPUMapping
+    from .cost import Cost
+
+Program = List[Any]
+AppliesTo = Literal["arch", "mach"]
+
+
+@dataclass
+class PassContext:
+    """Read-mostly context object passed to every Pass.run() call."""
+    qpu_config: Optional["QPUConfig"] = None
+    isa: Optional["ISA"] = None
+    mapping: Optional["QPUMapping"] = None
+    topology: Optional[Any] = None
+    cost_before: Optional["Cost"] = None
+    scratchpad: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PassRecord:
+    """Per-pass execution telemetry returned by PassManager.run()."""
+    pass_name: str
+    group_name: str
+    iteration: int
+    cost_before: "Cost"
+    cost_after: "Cost"
+    delta_seconds: float
+
+
+class Pass(ABC):
+    """Abstract base for a single optimization pass.
+
+    A Pass is a pure function: program -> program. Implementations MUST NOT
+    mutate the input list or its elements; they MUST return a new list.
+    """
+    name: str
+    applies_to: AppliesTo
+
+    @abstractmethod
+    def run(self, program: Program, ctx: PassContext) -> Program:
+        """Transform `program` and return the new program."""
+        ...
