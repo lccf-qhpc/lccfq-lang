@@ -69,6 +69,7 @@ class QPU:
             "mapped",
             "swapped",
             "expanded",
+            "arch_optimized",
             "transpiled",
             "executed"
         ]:

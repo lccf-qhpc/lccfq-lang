@@ -18,6 +18,28 @@ from .lower_passes import (
     LOWERING_STAGES,
 )
 from .lower_universal import LowerU2, LowerU3, LowerCU, FanoutMeasure
+from .peephole_arch import (
+    RemoveIdentity,
+    CancelInverses,
+    MergeRotations,
+    FuseEulerZYZ,
+    CommuteThroughControl,
+)
+from .templates_arch import (
+    HCXHRule,
+    SwapElision,
+    TEMPLATE_REGISTRY,
+    register_template,
+    unregister_template,
+    get_registered_templates,
+)
+from .level_select import (
+    passes_for_level,
+    max_iters_for_level,
+    resolve_opt_passes,
+    ALL_ARCH_PASSES,
+    VALID_OPT_LEVELS,
+)
 
 __all__ = [
     "MappedPass",
@@ -30,4 +52,20 @@ __all__ = [
     "LowerU3",
     "LowerCU",
     "FanoutMeasure",
+    "RemoveIdentity",
+    "CancelInverses",
+    "MergeRotations",
+    "FuseEulerZYZ",
+    "CommuteThroughControl",
+    "HCXHRule",
+    "SwapElision",
+    "TEMPLATE_REGISTRY",
+    "register_template",
+    "unregister_template",
+    "get_registered_templates",
+    "passes_for_level",
+    "max_iters_for_level",
+    "resolve_opt_passes",
+    "ALL_ARCH_PASSES",
+    "VALID_OPT_LEVELS",
 ]

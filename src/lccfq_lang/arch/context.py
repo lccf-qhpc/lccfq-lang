@@ -64,15 +64,32 @@ class Circuit:
                  creg: CRegister,
                  qpu: Backend = None,
                  shots: int = 1000,
-                 verbose=False):
+                 verbose: bool = False,
+                 opt_level: int = 0,
+                 opt_passes: list[str] | None = None):
         """Create a new circuit.
 
         :param qreg: quantum register
         :param creg: classical register
         :param qpu: QPU backend
-        :param shots: number of shot to run this circuit for
+        :param shots: number of shots
         :param verbose: trigger verbose output
+        :param opt_level: arch-level optimization level (0..3). Ignored
+            when opt_passes is not None. Default 0 (no arch_opt).
+        :param opt_passes: explicit list of arch pass names; overrides opt_level.
+            Use [] to explicitly disable arch_opt while still using the
+            explicit-mode contract.
         """
+        if not isinstance(opt_level, int) or opt_level not in (0, 1, 2, 3):
+            raise ValueError(
+                f"Circuit: opt_level must be one of (0, 1, 2, 3), got {opt_level!r}"
+            )
+        if opt_passes is not None:
+            if not isinstance(opt_passes, list) or not all(
+                isinstance(n, str) for n in opt_passes
+            ):
+                raise TypeError("Circuit: opt_passes must be None or list[str]")
+
         self.qreg = qreg
         self.creg = creg
         self.qpu = qpu
@@ -80,6 +97,8 @@ class Circuit:
         self.verbose = verbose
         self.instructions: List[Instruction] = list()
         self._opt_records = []
+        self._opt_level = opt_level
+        self._opt_passes = opt_passes
 
     def results(self) -> Dict[str, int]:
         return self.creg.data
@@ -150,7 +169,15 @@ class Circuit:
             build_lowering_groups, slice_groups_for,
         )
 
-        groups = slice_groups_for(last_pass, build_lowering_groups(self.qreg, self.qpu))
+        groups = slice_groups_for(
+            last_pass,
+            build_lowering_groups(
+                self.qreg,
+                self.qpu,
+                opt_level=self._opt_level,
+                opt_passes=self._opt_passes,
+            ),
+        )
         ctx = PassContext(
             qpu_config=self.qpu.config,
             isa=self.qpu.isa,
