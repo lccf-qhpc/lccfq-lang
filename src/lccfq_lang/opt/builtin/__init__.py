@@ -35,10 +35,29 @@ from .templates_arch import (
 )
 from .level_select import (
     passes_for_level,
+    mach_passes_for_level,
     max_iters_for_level,
     resolve_opt_passes,
     ALL_ARCH_PASSES,
+    ALL_MACH_PASSES,
     VALID_OPT_LEVELS,
+)
+from .peephole_mach import (
+    RemoveIdentityMach,
+    MergeAdjacent1Q,
+    EulerXYRecompose,
+)
+from .scheduling_mach import (
+    DeferMeasurement,
+    ParallelizeLayers,
+)
+from .native_synthesis import RyRzRyToHardware
+from ._native import (
+    NATIVE_1Q_PARAM,
+    NATIVE_2Q,
+    NATIVE_MEASURE,
+    NATIVE_RESET,
+    NATIVE_ALL_SYMBOLS,
 )
 
 __all__ = [
@@ -64,8 +83,21 @@ __all__ = [
     "unregister_template",
     "get_registered_templates",
     "passes_for_level",
+    "mach_passes_for_level",
     "max_iters_for_level",
     "resolve_opt_passes",
     "ALL_ARCH_PASSES",
+    "ALL_MACH_PASSES",
     "VALID_OPT_LEVELS",
+    "RemoveIdentityMach",
+    "MergeAdjacent1Q",
+    "EulerXYRecompose",
+    "DeferMeasurement",
+    "ParallelizeLayers",
+    "RyRzRyToHardware",
+    "NATIVE_1Q_PARAM",
+    "NATIVE_2Q",
+    "NATIVE_MEASURE",
+    "NATIVE_RESET",
+    "NATIVE_ALL_SYMBOLS",
 ]

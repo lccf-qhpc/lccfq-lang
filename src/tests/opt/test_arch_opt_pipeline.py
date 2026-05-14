@@ -204,7 +204,7 @@ def test_unknown_opt_pass_name_raises():
     qreg = qpu.qregister(2)
     creg = CRegister(2)
 
-    with pytest.raises(ValueError, match="Unknown arch pass"):
+    with pytest.raises(ValueError, match="Unknown pass"):
         with Circuit(qreg, creg, qpu, shots=1, opt_passes=["bogus"]) as c:
             c >> qpu.isa.x(tg=0)
 

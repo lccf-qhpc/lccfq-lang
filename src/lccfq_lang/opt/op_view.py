@@ -74,5 +74,13 @@ class OpView:
     def kind(self) -> str:
         return self._kind
 
+    @property
+    def tags(self) -> dict:
+        return getattr(self.op, "tags", {})
+
+    @property
+    def duration(self):
+        return getattr(self.op, "duration", None)
+
     def __repr__(self) -> str:
         return f"OpView({self._kind}, {self.symbol}, q={self.qubits})"

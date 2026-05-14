@@ -119,19 +119,28 @@ class TestAllArchPasses:
 
 
 class TestResolveOptPasses:
-    def test_known_pass_returns_instance(self):
-        result = resolve_opt_passes(["remove_identity"], isa)
-        assert len(result) == 1
-        assert isinstance(result[0], RemoveIdentity)
+    def test_known_arch_pass_returns_instance(self):
+        arch_passes, mach_passes = resolve_opt_passes(["remove_identity"], isa)
+        assert len(arch_passes) == 1
+        assert isinstance(arch_passes[0], RemoveIdentity)
+        assert mach_passes == []
 
-    def test_multiple_known_passes(self):
-        result = resolve_opt_passes(["remove_identity", "cancel_inverses"], isa)
+    def test_multiple_known_arch_passes(self):
+        arch_passes, mach_passes = resolve_opt_passes(["remove_identity", "cancel_inverses"], isa)
+        assert len(arch_passes) == 2
+        assert isinstance(arch_passes[0], RemoveIdentity)
+        assert isinstance(arch_passes[1], CancelInverses)
+        assert mach_passes == []
+
+    def test_returns_tuple_of_two_lists(self):
+        result = resolve_opt_passes(["remove_identity"], isa)
+        assert isinstance(result, tuple)
         assert len(result) == 2
-        assert isinstance(result[0], RemoveIdentity)
-        assert isinstance(result[1], CancelInverses)
+        assert isinstance(result[0], list)
+        assert isinstance(result[1], list)
 
     def test_unknown_pass_raises(self):
-        with pytest.raises(ValueError, match="Unknown arch pass: bogus"):
+        with pytest.raises(ValueError, match="Unknown pass: bogus"):
             resolve_opt_passes(["bogus"], isa)
 
     def test_non_list_raises_type_error(self):

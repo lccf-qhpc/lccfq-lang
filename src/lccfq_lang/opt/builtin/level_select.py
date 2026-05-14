@@ -85,18 +85,95 @@ def max_iters_for_level(level: int) -> int:
     return {0: 1, 1: 3, 2: 5, 3: 10}[level]
 
 
-def resolve_opt_passes(names: list[str], isa: ISA) -> List[Pass]:
-    """Resolve a list of pass names into instantiated Pass objects.
+from .peephole_mach import (
+    RemoveIdentityMach,
+    MergeAdjacent1Q,
+    EulerXYRecompose,
+)
+from .scheduling_mach import (
+    DeferMeasurement,
+    ParallelizeLayers,
+)
+from .native_synthesis import RyRzRyToHardware
 
-    Used by build_lowering_groups when opt_passes is not None.
-    Unknown names raise ValueError.
+
+# Name -> Pass class registry for opt_passes resolution at mach level.
+# Every value must be constructible as cls(isa).
+ALL_MACH_PASSES: dict[str, Type[Pass]] = {
+    RemoveIdentityMach.name: RemoveIdentityMach,
+    MergeAdjacent1Q.name:    MergeAdjacent1Q,
+    EulerXYRecompose.name:   EulerXYRecompose,
+    DeferMeasurement.name:   DeferMeasurement,
+    ParallelizeLayers.name:  ParallelizeLayers,
+    RyRzRyToHardware.name:   RyRzRyToHardware,
+}
+
+
+def mach_passes_for_level(level: int, isa: ISA) -> List[Pass]:
+    """Return the list of mach-level passes for the given opt_level.
+
+    :raises ValueError: if level is not in VALID_OPT_LEVELS.
+    """
+    if level not in VALID_OPT_LEVELS:
+        raise ValueError(
+            f"mach_passes_for_level: opt_level must be one of {VALID_OPT_LEVELS}, got {level!r}"
+        )
+    if level == 0:
+        return []
+    if level == 1:
+        # Safe & cheap: dedup + zero-rotation removal only.
+        return [
+            MergeAdjacent1Q(isa),
+            RemoveIdentityMach(isa),
+        ]
+    if level == 2:
+        # + measurable wins from the canonical rz-band collapse
+        # + measurement deferral.
+        return [
+            MergeAdjacent1Q(isa),
+            RemoveIdentityMach(isa),
+            RyRzRyToHardware(isa),
+            DeferMeasurement(isa),
+        ]
+    # level == 3
+    # + aggressive single-qubit recomposition + analysis-only layer
+    # tagging.
+    return [
+        MergeAdjacent1Q(isa),
+        RemoveIdentityMach(isa),
+        RyRzRyToHardware(isa),
+        DeferMeasurement(isa),
+        EulerXYRecompose(isa),
+        ParallelizeLayers(isa),
+    ]
+
+
+def resolve_opt_passes(
+    names: list[str],
+    isa: ISA,
+) -> tuple[List[Pass], List[Pass]]:
+    """Resolve a list of pass names into (arch_passes, mach_passes).
+
+    Each name is looked up in ALL_ARCH_PASSES first; if absent, in
+    ALL_MACH_PASSES. Unknown names raise ValueError. Order within
+    each output list matches the order in *names* (filtered to that
+    level).
+
+    :raises TypeError: if names is not a list[str].
+    :raises ValueError: if any name is unknown to both registries.
     """
     if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
         raise TypeError("resolve_opt_passes: names must be list[str]")
-    out: List[Pass] = []
+    arch_out: List[Pass] = []
+    mach_out: List[Pass] = []
     for name in names:
         cls = ALL_ARCH_PASSES.get(name)
-        if cls is None:
-            raise ValueError(f"Unknown arch pass: {name}")
-        out.append(cls(isa))
-    return out
+        if cls is not None:
+            arch_out.append(cls(isa))
+            continue
+        cls = ALL_MACH_PASSES.get(name)
+        if cls is not None:
+            mach_out.append(cls(isa))
+            continue
+        raise ValueError(f"Unknown pass: {name}")
+    return arch_out, mach_out

@@ -30,6 +30,7 @@ LOWERING_STAGES: tuple[str, ...] = (
     "expanded",
     "arch_optimized",
     "transpiled",
+    "mach_optimized",
 )
 
 
@@ -94,13 +95,17 @@ def build_lowering_groups(
     Phase 2 additions: when opt_level > 0 (or opt_passes is non-empty),
     insert an "arch_opt" PassGroup between "lower_expand" and "lower_transpile".
 
+    Phase 3 additions: when opt_level > 0, also append a "mach_opt" PassGroup
+    after "lower_transpile".
+
     :param qreg: virtual-to-physical mapping holder
     :param qpu: backend (provides isa, transpiler)
     :param opt_level: 0..3; ignored when opt_passes is not None
-    :param opt_passes: explicit list of arch pass names; overrides opt_level
+    :param opt_passes: explicit list of pass names (arch or mach); overrides opt_level
     """
     from .level_select import (
         passes_for_level,
+        mach_passes_for_level,
         max_iters_for_level,
         resolve_opt_passes,
     )
@@ -121,16 +126,17 @@ def build_lowering_groups(
         ),
     ]
 
-    # Resolve arch_opt passes.
+    # Resolve passes for both arch and mach groups.
     if opt_passes is not None:
         if not isinstance(opt_passes, list):
             raise TypeError("build_lowering_groups: opt_passes must be a list[str] or None")
-        arch_passes = resolve_opt_passes(opt_passes, qpu.isa)
+        arch_passes, mach_passes = resolve_opt_passes(opt_passes, qpu.isa)
         # Explicit-mode: do NOT auto-append registered user templates;
         # the user has stated their pass list exactly.
         max_iters = 5
     else:
         arch_passes = passes_for_level(opt_level, qpu.isa)
+        mach_passes = mach_passes_for_level(opt_level, qpu.isa)
         # Implicit-mode: append user-registered templates when level >= 1.
         if opt_level >= 1:
             arch_passes = arch_passes + get_registered_templates()
@@ -149,6 +155,12 @@ def build_lowering_groups(
     groups.append(
         PassGroup("lower_transpile", "linear", [TranspiledPass(qpu.transpiler)])
     )
+
+    if mach_passes:
+        groups.append(
+            PassGroup("mach_opt", "fixpoint", mach_passes, max_iters=max_iters)
+        )
+
     return groups
 
 
@@ -168,26 +180,26 @@ def slice_groups_for(last_pass: str, groups: list[PassGroup]) -> list[PassGroup]
     if last_pass not in LOWERING_STAGES:
         raise UnknownCompilerPass(last_pass)
 
-    # Stage -> group name. arch_optimized is conditional.
+    # Stage -> group name. arch_optimized and mach_optimized are conditional.
     STAGE_TO_GROUP = {
-        "mapped":         "lower_map",
-        "swapped":        "lower_swap",
-        "expanded":       "lower_expand",
-        "arch_optimized": "arch_opt",
-        "transpiled":     "lower_transpile",
+        "mapped":          "lower_map",
+        "swapped":         "lower_swap",
+        "expanded":        "lower_expand",
+        "arch_optimized":  "arch_opt",
+        "transpiled":      "lower_transpile",
+        "mach_optimized":  "mach_opt",
     }
     target_group = STAGE_TO_GROUP[last_pass]
 
-    # If the requested group is missing (arch_opt was omitted), fall back
-    # to the immediately preceding lowering stage that *is* present.
+    # If the requested group is missing (arch_opt or mach_opt was omitted),
+    # fall back to the immediately preceding lowering stage that *is* present.
     group_names = [g.name for g in groups]
     if target_group not in group_names:
-        # Only arch_opt can be conditionally absent. Treat "arch_optimized"
-        # as equivalent to "expanded" in this case.
         if last_pass == "arch_optimized":
             target_group = "lower_expand"
+        elif last_pass == "mach_optimized":
+            target_group = "lower_transpile"
         else:
-            # Should not occur: every other stage's group is unconditional.
             raise UnknownCompilerPass(last_pass)
 
     idx = group_names.index(target_group)

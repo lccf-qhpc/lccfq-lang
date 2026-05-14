@@ -10,7 +10,7 @@ License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
 from abc import ABC
-from typing import List
+from typing import List, Optional
 
 
 class Command(ABC):
@@ -30,11 +30,16 @@ class Gate(Command):
                  symbol: str,
                  target_qubits: List[int],
                  control_qubits: List[int],
-                 params: List[float]):
+                 params: List[float],
+                 tags: Optional[dict] = None,
+                 duration: Optional[float] = None):
         super().__init__(symbol)
         self.target_qubits = target_qubits
         self.control_qubits = control_qubits
         self.params = params
+        # Mutable per-instance dict; do NOT use {} as a default arg.
+        self.tags: dict = {} if tags is None else dict(tags)
+        self.duration: Optional[float] = duration
 
     def __repr__(self):
         return f"{self.symbol} @ {self.target_qubits} ctrl by {self.control_qubits} w/ params={self.params}\n"
@@ -44,12 +49,19 @@ class Gate(Command):
 
         :return: a JSON stub
         """
-        return {
+        out = {
             "symbol": self.symbol,
             "target_qubits": self.target_qubits,
             "control_qubits": self.control_qubits,
-            "params": self.params
+            "params": self.params,
         }
+        # Only include tags/duration in serialization if non-empty/None,
+        # to keep backend payloads byte-identical when these are unused.
+        if self.tags:
+            out["tags"] = dict(self.tags)
+        if self.duration is not None:
+            out["duration"] = self.duration
+        return out
 
 
 class Control(Command):

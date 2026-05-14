@@ -71,6 +71,7 @@ class QPU:
             "expanded",
             "arch_optimized",
             "transpiled",
+            "mach_optimized",
             "executed"
         ]:
             self.last_pass = last_pass if last_pass is not None else "transpiled"
