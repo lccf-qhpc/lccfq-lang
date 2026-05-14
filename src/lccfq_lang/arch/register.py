@@ -128,6 +128,19 @@ class QRegister:
 
         return instr
 
+    def rebind_mapping(self, new_mapping: "QPUMapping") -> "QRegister":
+        """Return a shallow copy of self with .mapping replaced.
+
+        Non-destructive: does not mutate self. Pre-Phase-4 behavior is
+        unchanged because callers never invoked this method.
+
+        :param new_mapping: the QPUMapping to bind on the clone
+        :return: cloned QRegister with new_mapping
+        """
+        clone = copy.copy(self)
+        clone.mapping = new_mapping
+        return clone
+
     def all(self):
         return self.mapping.virtual_qubits
 

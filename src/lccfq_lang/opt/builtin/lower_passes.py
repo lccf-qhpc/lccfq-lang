@@ -89,6 +89,7 @@ def build_lowering_groups(
     qpu,
     opt_level: int = 0,
     opt_passes: list[str] | None = None,
+    routing_strategy: str | None = None,
 ) -> list[PassGroup]:
     """Construct the lowering PassGroups for a given register and QPU.
 
@@ -98,10 +99,15 @@ def build_lowering_groups(
     Phase 3 additions: when opt_level > 0, also append a "mach_opt" PassGroup
     after "lower_transpile".
 
+    Phase 4 additions: when routing_strategy is "sabre_lite" (or the mapping
+    default is "sabre_lite"), use LookaheadSwapInsertion instead of SwappedPass
+    for the "lower_swap" group.
+
     :param qreg: virtual-to-physical mapping holder
     :param qpu: backend (provides isa, transpiler)
     :param opt_level: 0..3; ignored when opt_passes is not None
     :param opt_passes: explicit list of pass names (arch or mach); overrides opt_level
+    :param routing_strategy: override routing strategy; None uses qreg.mapping.routing_strategy
     """
     from .level_select import (
         passes_for_level,
@@ -110,10 +116,29 @@ def build_lowering_groups(
         resolve_opt_passes,
     )
     from .templates_arch import get_registered_templates
+    from lccfq_lang.arch.mapping import QPUMapping  # for _VALID_ROUTING_STRATEGIES
+
+    # Phase 4: resolve effective routing strategy.
+    if routing_strategy is None:
+        effective_strategy = qreg.mapping.routing_strategy
+    else:
+        if routing_strategy not in QPUMapping._VALID_ROUTING_STRATEGIES:
+            raise ValueError(
+                f"build_lowering_groups: routing_strategy must be one of "
+                f"{QPUMapping._VALID_ROUTING_STRATEGIES}, got {routing_strategy!r}"
+            )
+        effective_strategy = routing_strategy
+
+    # Pick the swap pass based on effective strategy.
+    if effective_strategy == "sabre_lite":
+        from .routing import LookaheadSwapInsertion
+        swap_pass = LookaheadSwapInsertion(qreg, qpu.isa, qpu.mapping.topology)
+    else:
+        swap_pass = SwappedPass(qreg, qpu.isa)
 
     groups: list[PassGroup] = [
         PassGroup("lower_map",  "linear", [MappedPass(qreg)]),
-        PassGroup("lower_swap", "linear", [SwappedPass(qreg, qpu.isa)]),
+        PassGroup("lower_swap", "linear", [swap_pass]),
         PassGroup(
             "lower_expand",
             "linear",

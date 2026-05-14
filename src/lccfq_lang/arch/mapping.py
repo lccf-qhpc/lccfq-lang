@@ -21,16 +21,31 @@ class QPUMapping:
     A mapping from virtual to real qubits in LCCFQ.
     """
 
-    def __init__(self, virtual_qubits: List[int], topology: QPUTopology) -> None:
+    _VALID_ROUTING_STRATEGIES: tuple = ("identity", "sabre_lite")
+
+    def __init__(
+        self,
+        virtual_qubits: List[int],
+        topology: QPUTopology,
+        routing_strategy: str = "identity",
+    ) -> None:
         """During initialization, we will provide simple mappings. Mappings may be relabeled
         as needed to facilitate primitive forms of quantum compilation, but optimization will
         be limited.
 
         :param virtual_qubits: list of virtual qubits to map
         :param topology: Physical topology of the QPU.
+        :param routing_strategy: one of "identity" (default, legacy greedy) or "sabre_lite".
         """
+        if routing_strategy not in self._VALID_ROUTING_STRATEGIES:
+            raise ValueError(
+                f"QPUMapping: routing_strategy must be one of "
+                f"{self._VALID_ROUTING_STRATEGIES}, got {routing_strategy!r}"
+            )
+
         self.virtual_qubits = virtual_qubits
         self.topology = topology
+        self.routing_strategy = routing_strategy
 
         if len(self.virtual_qubits) > len(self.topology.qubits()):
             raise NotEnoughQubits(len(self.virtual_qubits), len(self.topology.qubits()))
@@ -38,6 +53,37 @@ class QPUMapping:
         self.mapping = {
             v: p for v, p in zip(self.virtual_qubits, self.topology.qubits())
         }
+
+    def with_layout(self, new_layout: dict) -> "QPUMapping":
+        """Return a new QPUMapping with the supplied virtual->physical mapping.
+
+        Does not mutate self. Preserves topology, virtual_qubits ordering, and
+        routing_strategy.
+
+        :param new_layout: dict mapping virtual qubit id -> physical qubit id
+        :return: new QPUMapping with the given layout
+        :raises ValueError: if keys/values are invalid
+        """
+        if set(new_layout.keys()) != set(self.virtual_qubits):
+            raise ValueError(
+                "QPUMapping.with_layout: new_layout keys must equal virtual_qubits"
+            )
+        physical = list(new_layout.values())
+        if len(set(physical)) != len(physical):
+            raise ValueError(
+                "QPUMapping.with_layout: physical assignments must be unique"
+            )
+        if not set(physical).issubset(set(self.topology.qubits())):
+            raise ValueError(
+                "QPUMapping.with_layout: physical values must be topology qubits"
+            )
+        clone = QPUMapping(
+            virtual_qubits=list(self.virtual_qubits),
+            topology=self.topology,
+            routing_strategy=self.routing_strategy,
+        )
+        clone.mapping = dict(new_layout)
+        return clone
 
     def map(self, instruction: Instruction) -> Instruction:
         """Maps an instruction into the provided topology.

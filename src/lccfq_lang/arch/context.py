@@ -168,21 +168,45 @@ class Circuit:
         from lccfq_lang.opt.builtin.lower_passes import (
             build_lowering_groups, slice_groups_for,
         )
+        from lccfq_lang.opt.builtin.routing import LayoutSelection
+
+        # Phase 4: resolve effective routing strategy.
+        # opt_level >= 2 forces "sabre_lite" regardless of mapping default.
+        base_strategy = self.qreg.mapping.routing_strategy
+
+        if self._opt_level >= 2:
+            effective_strategy = "sabre_lite"
+        else:
+            effective_strategy = base_strategy
+
+        # Optionally rebind qreg.mapping with an improved layout for this run.
+        qreg_for_run = self.qreg
+
+        if effective_strategy == "sabre_lite":
+            new_layout = LayoutSelection.compute_layout(
+                program=self.instructions,
+                topology=self.qreg.mapping.topology,
+                isa=self.qpu.isa,
+                initial_layout=dict(self.qreg.mapping.mapping),
+            )
+            new_mapping = self.qreg.mapping.with_layout(new_layout)
+            qreg_for_run = self.qreg.rebind_mapping(new_mapping)
 
         groups = slice_groups_for(
             last_pass,
             build_lowering_groups(
-                self.qreg,
+                qreg_for_run,
                 self.qpu,
                 opt_level=self._opt_level,
                 opt_passes=self._opt_passes,
+                routing_strategy=effective_strategy,
             ),
         )
         ctx = PassContext(
             qpu_config=self.qpu.config,
             isa=self.qpu.isa,
-            mapping=self.qpu.mapping,
-            topology=self.qpu.mapping.topology,
+            mapping=qreg_for_run.mapping,
+            topology=qreg_for_run.mapping.topology,
         )
         program, records = PassManager(groups).run(self.instructions, ctx)
         self._opt_records = records

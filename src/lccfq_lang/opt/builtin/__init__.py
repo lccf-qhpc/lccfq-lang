@@ -59,6 +59,7 @@ from ._native import (
     NATIVE_RESET,
     NATIVE_ALL_SYMBOLS,
 )
+from .routing import LookaheadSwapInsertion, LayoutSelection
 
 __all__ = [
     "MappedPass",
@@ -100,4 +101,6 @@ __all__ = [
     "NATIVE_MEASURE",
     "NATIVE_RESET",
     "NATIVE_ALL_SYMBOLS",
+    "LookaheadSwapInsertion",
+    "LayoutSelection",
 ]
