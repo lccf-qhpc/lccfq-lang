@@ -66,7 +66,8 @@ class Circuit:
                  shots: int = 1000,
                  verbose: bool = False,
                  opt_level: int = 0,
-                 opt_passes: list[str] | None = None):
+                 opt_passes: list[str] | None = None,
+                 report: bool = False):
         """Create a new circuit.
 
         :param qreg: quantum register
@@ -79,6 +80,8 @@ class Circuit:
         :param opt_passes: explicit list of arch pass names; overrides opt_level.
             Use [] to explicitly disable arch_opt while still using the
             explicit-mode contract.
+        :param report: when True, populate :attr:`opt_report` after the
+            ``with`` block exits. Default False (zero-overhead).
         """
         if not isinstance(opt_level, int) or opt_level not in (0, 1, 2, 3):
             raise ValueError(
@@ -89,6 +92,10 @@ class Circuit:
                 isinstance(n, str) for n in opt_passes
             ):
                 raise TypeError("Circuit: opt_passes must be None or list[str]")
+        if not isinstance(report, bool):
+            raise TypeError(
+                f"Circuit: report must be a bool, got {type(report).__name__}"
+            )
 
         self.qreg = qreg
         self.creg = creg
@@ -99,6 +106,8 @@ class Circuit:
         self._opt_records = []
         self._opt_level = opt_level
         self._opt_passes = opt_passes
+        self._report = report
+        self.opt_report: dict | None = None
 
     def results(self) -> Dict[str, int]:
         return self.creg.data
@@ -159,8 +168,32 @@ class Circuit:
 
         last_pass = self.qpu.last_pass
 
+        # Phase 5: capture pipeline-entry program & cost so the report sees the
+        # raw input. Cost.measure is cheap (depth + counts + estimated_error).
+        if self._report:
+            from lccfq_lang.opt.cost import Cost
+            pipeline_input = list(self.instructions)
+            pipeline_in_cost = Cost.measure(
+                pipeline_input,
+                kind="arch",
+                qpu_config=self.qpu.config,
+            )
+        else:
+            pipeline_input = None
+            pipeline_in_cost = None
+
         if last_pass == "parsed":
             self._handle_pass(self.instructions, "parsed")
+            if self._report:
+                # Empty-pipeline report: no groups, totals show identity.
+                self.opt_report = self._build_opt_report(
+                    program_in=pipeline_input,
+                    program_out=self.instructions,
+                    in_cost=pipeline_in_cost,
+                    out_cost=pipeline_in_cost,   # parsed = no transformation
+                    last_pass="parsed",
+                    effective_strategy=self.qreg.mapping.routing_strategy,
+                )
             return True
 
         # Deferred imports: keep arch/ free of eager opt/ dependency at module load.
@@ -211,7 +244,107 @@ class Circuit:
         program, records = PassManager(groups).run(self.instructions, ctx)
         self._opt_records = records
         self._handle_pass(program, last_pass)
+
+        if self._report:
+            from lccfq_lang.opt.cost import Cost
+            kind_after = (
+                "arch"
+                if last_pass in ("parsed", "mapped", "swapped",
+                                 "expanded", "arch_optimized")
+                else "mach"
+            )
+            pipeline_out_cost = Cost.measure(
+                program,
+                kind=kind_after,
+                qpu_config=self.qpu.config,
+            )
+            self.opt_report = self._build_opt_report(
+                program_in=pipeline_input,
+                program_out=program,
+                in_cost=pipeline_in_cost,
+                out_cost=pipeline_out_cost,
+                last_pass=last_pass,
+                effective_strategy=effective_strategy,
+            )
+
         return True
+
+    def _build_opt_report(
+        self,
+        *,
+        program_in,
+        program_out,
+        in_cost,
+        out_cost,
+        last_pass: str,
+        effective_strategy: str,
+    ) -> dict:
+        """Assemble the structured opt_report dict from self._opt_records and
+        pre/post pipeline costs.
+
+        Side-effect-free; safe to call from __exit__ exactly once.
+        """
+        # Group records by group_name preserving first-seen order.
+        groups_in_order: list[str] = []
+        by_group: dict[str, list] = {}
+        for r in self._opt_records:
+            if r.group_name not in by_group:
+                groups_in_order.append(r.group_name)
+                by_group[r.group_name] = []
+            by_group[r.group_name].append(r)
+
+        # Build per-group entries.
+        group_entries = []
+        for gname in groups_in_order:
+            rs = by_group[gname]
+            # Mode inference: if any record carries iteration > 0, the group ran
+            # in fixpoint mode. Otherwise linear. (PassManager guarantees iteration=0
+            # for linear groups and >=0 for fixpoint groups.)
+            max_it = max(r.iteration for r in rs)
+            mode = "fixpoint" if max_it > 0 else _infer_group_mode(gname)
+            # iterations = max_it + 1 for fixpoint; 1 for linear
+            iterations = max_it + 1 if mode == "fixpoint" else 1
+
+            group_in_cost = rs[0].cost_before
+            group_out_cost = rs[-1].cost_after
+            group_entries.append({
+                "name": gname,
+                "mode": mode,
+                "iterations": iterations,
+                "passes": [
+                    {
+                        "name": r.pass_name,
+                        "iteration": r.iteration,
+                        "cost_before": _cost_to_dict(r.cost_before),
+                        "cost_after": _cost_to_dict(r.cost_after),
+                        "delta_seconds": r.delta_seconds,
+                    }
+                    for r in rs
+                ],
+                "cost_before": _cost_to_dict(group_in_cost),
+                "cost_after": _cost_to_dict(group_out_cost),
+                "scalarized_delta": (
+                    group_in_cost.scalarize() - group_out_cost.scalarize()
+                ),
+            })
+
+        total_seconds = sum(r.delta_seconds for r in self._opt_records)
+
+        return {
+            "opt_level": self._opt_level,
+            "opt_passes": (
+                list(self._opt_passes) if self._opt_passes is not None else None
+            ),
+            "routing_strategy": effective_strategy,
+            "last_pass": last_pass,
+            "groups": group_entries,
+            "totals": {
+                "cost_before": _cost_to_dict(in_cost),
+                "cost_after": _cost_to_dict(out_cost),
+                "scalarized_delta": in_cost.scalarize() - out_cost.scalarize(),
+                "total_seconds": total_seconds,
+            },
+        }
 
 
 class Test:
@@ -276,3 +409,44 @@ class Test:
 class Control:
     # TODO: control here means a change to the QPU state or its defining thresholds.
     pass
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers for opt_report construction (Phase 5)
+# ---------------------------------------------------------------------------
+
+def _cost_to_dict(c) -> dict:
+    """Stable JSON-friendly snapshot of a Cost dataclass.
+
+    Includes the scalarized score so report consumers don't have to recompute it.
+    """
+    return {
+        "depth": c.depth,
+        "count_1q": c.count_1q,
+        "count_2q": c.count_2q,
+        "count_native_2q": c.count_native_2q,
+        "estimated_error": c.estimated_error,
+        "scalarized": c.scalarize(),
+    }
+
+
+# Static map from group name to default mode. Used only when no record's
+# iteration is > 0 (so we can't disambiguate from telemetry alone).
+_GROUP_DEFAULT_MODE = {
+    "lower_map":       "linear",
+    "lower_swap":      "linear",
+    "lower_expand":    "linear",
+    "arch_opt":        "fixpoint",
+    "lower_transpile": "linear",
+    "mach_opt":        "fixpoint",
+}
+
+
+def _infer_group_mode(group_name: str) -> str:
+    """Return the canonical PassGroup mode for a known lowering group name.
+
+    For unknown groups (user-extended pipelines not envisioned in Phase 5),
+    default to 'linear' — the safer choice for downstream consumers that
+    treat 'fixpoint' as more expensive.
+    """
+    return _GROUP_DEFAULT_MODE.get(group_name, "linear")

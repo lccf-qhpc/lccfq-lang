@@ -134,10 +134,11 @@ def test_mach_optimized_with_level_1_runs():
 # ---------------------------------------------------------------------------
 
 def test_circuit_init_signature_unchanged():
-    """Phase 3 must not add new parameters to Circuit.__init__."""
+    """Phase 3/5: Circuit.__init__ must expose exactly the expected parameters."""
     sig = inspect.signature(Circuit.__init__)
     params = list(sig.parameters.keys())
-    expected = ["self", "qreg", "creg", "qpu", "shots", "verbose", "opt_level", "opt_passes"]
+    # Phase 5 adds `report` (bool, default False) after opt_passes.
+    expected = ["self", "qreg", "creg", "qpu", "shots", "verbose", "opt_level", "opt_passes", "report"]
     assert params == expected
 
 

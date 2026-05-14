@@ -50,6 +50,136 @@ The compiler runs up to six stages, controlled by `last_pass`:
 | `transpiled` | Converts to native hardware gate set |
 | `executed` | Submits to the QPU backend |
 
+## Optimization
+
+The compiler ships an optional pipeline of architecture-level (`arch_opt`) and
+machine-level (`mach_opt`) optimization passes. They run as additional stages
+between the lowering steps shown above and are gated by an `opt_level`
+keyword on `Circuit`.
+
+### Optimization levels
+
+| Level | Arch passes | Mach passes | Routing |
+|------:|---|---|---|
+| `0` | _(none)_ | _(none)_ | mapping default |
+| `1` | RemoveIdentity, CancelInverses, MergeRotations | MergeAdjacent1Q, RemoveIdentityMach | mapping default |
+| `2` | adds FuseEulerZYZ, HCXHRule, SwapElision | adds RyRzRyToHardware, DeferMeasurement | forces `sabre_lite` |
+| `3` | adds CommuteThroughControl | adds EulerXYRecompose, ParallelizeLayers | forces `sabre_lite` |
+
+```python
+with Circuit(qreg, creg, qpu, shots=1000, opt_level=2) as c:
+    c >> qpu.isa.h(tg=0)
+    c >> qpu.isa.cx(ct=0, tg=1)
+    c >> qpu.isa.measure(tgs=[0, 1])
+```
+
+For full control, pass `opt_passes=[...]` with explicit pass names (resolved against
+`ALL_ARCH_PASSES` / `ALL_MACH_PASSES`). When `opt_passes` is set, `opt_level` is ignored
+and user-registered templates are **not** auto-appended.
+
+### Inspecting the pipeline
+
+`last_pass` accepts the lowering stages plus two optimization checkpoints:
+
+| `last_pass` value | What is returned |
+|---|---|
+| `parsed` | raw instructions |
+| `mapped` | after virtual→physical mapping |
+| `swapped` | after SWAP insertion |
+| `expanded` | after high-level decomposition |
+| `arch_optimized` | after the `arch_opt` PassGroup (if `opt_level > 0`) |
+| `transpiled` | after lowering to native gates |
+| `mach_optimized` | after the `mach_opt` PassGroup (if `opt_level > 0`) |
+
+If `opt_level == 0`, requesting `arch_optimized` or `mach_optimized` is silently
+satisfied by the immediately preceding lowering stage (no error).
+
+Pass `report=True` to attach a structured pipeline report to the circuit:
+
+```python
+with Circuit(qreg, creg, qpu, opt_level=2, report=True) as c:
+    ...
+
+print(c.opt_report["totals"])
+# {"cost_before": {...}, "cost_after": {...},
+#  "scalarized_delta": 12.3, "total_seconds": 0.004}
+
+for group in c.opt_report["groups"]:
+    print(group["name"], group["iterations"], group["scalarized_delta"])
+```
+
+The report dict has the shape:
+
+```text
+opt_report
+├── opt_level: int
+├── opt_passes: list[str] | None
+├── routing_strategy: str
+├── last_pass: str
+├── groups: list of
+│     ├── name: str               (e.g. "arch_opt", "mach_opt")
+│     ├── mode: "linear" | "fixpoint"
+│     ├── iterations: int
+│     ├── passes: list of
+│     │     ├── name: str
+│     │     ├── iteration: int
+│     │     ├── cost_before: dict   (depth, count_1q, count_2q,
+│     │     ├── cost_after:  dict    count_native_2q, estimated_error,
+│     │     └── delta_seconds: float scalarized)
+│     ├── cost_before: dict
+│     ├── cost_after: dict
+│     └── scalarized_delta: float
+└── totals
+      ├── cost_before: dict
+      ├── cost_after: dict
+      ├── scalarized_delta: float
+      └── total_seconds: float
+```
+
+The dict is JSON-serializable (all leaves are primitives or `None`).
+
+### Custom passes
+
+`Pass` is the abstract base for a single optimization pass. Subclass it,
+implement `run(program, ctx) -> program` as a pure function (do not mutate
+`program`), and register it via `register_template` so it is appended to
+`arch_opt` whenever `opt_level >= 1`:
+
+```python
+from lccfq_lang import Pass, PassContext, register_template
+
+class DropAllX(Pass):
+    name = "drop_all_x"
+    applies_to = "arch"
+
+    def __init__(self, isa):
+        self._isa = isa
+
+    def run(self, program, ctx: PassContext):
+        return [op for op in program
+                if getattr(op.code, "value", None) != "x"]
+
+register_template(DropAllX)
+
+with Circuit(qreg, creg, qpu, opt_level=1, report=True) as c:
+    c >> qpu.isa.x(tg=0)
+    c >> qpu.isa.measure(tgs=[0])
+
+print([g["name"] for g in c.opt_report["groups"]])
+```
+
+For mach-level passes (`applies_to = "mach"`), prefer the explicit-mode
+contract: pass the class name in `opt_passes=[...]` rather than registering
+as a template (templates are arch-only by design).
+
+### Known limitations
+
+- **Two-qubit transpilation (Task #16):** the current XYiSW native lowering
+  does not always emit canonical-CNOT-equivalent unitaries. Optimization
+  passes themselves preserve semantics, but the *transpiled* program a
+  level `>=1` pipeline produces should not yet be trusted as correct on
+  hardware. Compile-time metrics (depth, counts, timings) are reliable.
+
 ## Instruction set
 
 The ISA provides the following operations:
