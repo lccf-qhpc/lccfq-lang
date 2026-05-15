@@ -23,14 +23,15 @@ def _u_ry(theta: float) -> np.ndarray:
     return np.array([[c, -s], [s, c]], dtype=complex)
 
 
-# sqiswap matrix in the basis (|00>, |01>, |10>, |11>) where the FIRST
-# index is the LOW qubit (little-endian convention shared with _sim.py).
-# Reference: https://en.wikipedia.org/wiki/Quantum_logic_gate
+# sqiswap matrix (actual √iSWAP, from H = (X⊗X + Y⊗Y)/2 evolved for t = π/4)
+# in the basis (|00>, |01>, |10>, |11>) where the FIRST index is the LOW
+# qubit (little-endian convention shared with _sim.py).
+# Squares to iSWAP. Makhlin invariants (0, -1).
 _SQISWAP = np.array([
-    [1.0,            0.0,            0.0, 0.0],
-    [0.0, (1 + 1j) / 2,  (1 - 1j) / 2, 0.0],
-    [0.0, (1 - 1j) / 2,  (1 + 1j) / 2, 0.0],
-    [0.0,            0.0,            0.0, 1.0],
+    [1.0, 0.0,                  0.0,                  0.0],
+    [0.0, 1.0 / np.sqrt(2),     1j  / np.sqrt(2),     0.0],
+    [0.0, 1j  / np.sqrt(2),     1.0 / np.sqrt(2),     0.0],
+    [0.0, 0.0,                  0.0,                  1.0],
 ], dtype=complex)
 
 

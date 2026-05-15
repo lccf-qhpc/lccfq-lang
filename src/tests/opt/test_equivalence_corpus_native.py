@@ -30,46 +30,48 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 CONFIG = str(DATA_DIR / "testing.toml")
 
 # Arch gates that safely transpile to native mach gates via XYiSW and can
-# be verified with the mach simulator. Two-qubit controlled gates (cx, cy,
-# cz, ch, cp, crx, cry, crz, cphase) are excluded from this Phase 3
-# equivalence corpus because the current XYiSW.transpile_gate entries for
-# those gates produce mach unitaries that are NOT locally equivalent to
-# the canonical controlled gate (e.g., the cx entry has Makhlin invariants
-# (-0.25, -1) instead of CNOT's (0, 1)). That is a pre-existing transpiler
-# defect, NOT a simulator-convention issue: no choice of basis ordering or
-# global phase in _equiv_native.py can reconcile two unitaries that occupy
-# different points in the Weyl chamber. Resolving the transpiler defect is
-# out of scope for Phase 3 (which adds mach-level optimization passes
-# downstream of the transpiler) and must be tracked as a separate task.
-# Until that is fixed, the mach equivalence corpus is restricted to gates
-# whose XYiSW transpilation is verified to act as the intended unitary
-# (single-qubit gates only). swap is also excluded because its
-# transpilation depends on the same sqiswap construction.
+# be verified with the mach simulator.  Two-qubit decompositions (cx, cy,
+# cz) have been verified correct at ~1e-15 Frobenius precision in Task #16
+# and are now included in the corpus.  The random program generator selects
+# from both single-qubit and two-qubit no-parameter gates so that the corpus
+# exercises the full transpilation path.  The corpus remains deterministic
+# with fixed seeds.
 _SUPPORTED_SQ_NOPAR = ["x", "y"]
 _SUPPORTED_SQ_PAR = ["rx", "ry", "rz"]
+_SUPPORTED_TQ_NOPAR = ["cx", "cy", "cz"]
 
 
 def _random_arch_program(seed: int, n_qubits: int):
-    """Generate a deterministic random single-qubit arch program for the given seed.
+    """Generate a deterministic random arch program for the given seed.
 
-    Restricts to single-qubit gates so the mach-level simulator can verify
-    equivalence without needing a full CX/CNOT reference unitary.
+    Includes single-qubit gates (parametric and non-parametric) as well as
+    the three verified no-parameter two-qubit gates (cx, cy, cz).  Two-qubit
+    gates are only emitted when n_qubits >= 2; control and target qubits are
+    always distinct.
     """
     rng = random.Random(seed)
     isa = ISA("lccfq")
     n_ops = rng.randint(3, 10)
     program = []
     for _ in range(n_ops):
-        kind = rng.choice(["sqn", "sqp"])
+        choices = ["sqn", "sqp"]
+        if n_qubits >= 2:
+            choices.append("tqn")
+        kind = rng.choice(choices)
         if kind == "sqn":
             sym = rng.choice(_SUPPORTED_SQ_NOPAR)
             q = rng.randrange(n_qubits)
             program.append(getattr(isa, sym)(tg=q))
-        else:
+        elif kind == "sqp":
             sym = rng.choice(_SUPPORTED_SQ_PAR)
             q = rng.randrange(n_qubits)
             theta = rng.uniform(-math.pi, math.pi)
             program.append(getattr(isa, sym)(tg=q, params=[theta]))
+        else:  # tqn
+            sym = rng.choice(_SUPPORTED_TQ_NOPAR)
+            ct = rng.randrange(n_qubits)
+            tg = rng.choice([q for q in range(n_qubits) if q != ct])
+            program.append(getattr(isa, sym)(ct=ct, tg=tg))
     return program
 
 

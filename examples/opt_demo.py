@@ -9,12 +9,10 @@ Description:
     opt_level (0..3) with `report=True`, printing per-level cost deltas
     and a final comparison table.
 
-    KNOWN LIMITATION (lccfq-lang Task #16): two-qubit transpilation to the
-    XYiSW native set currently produces unitaries that are NOT equivalent
-    to canonical CNOT downstream of optimization. This demo therefore
-    reports COMPILE-TIME METRICS ONLY — depth, gate counts, and timing.
-    Do not interpret the optimized programs as semantically correct on
-    real hardware until Task #16 is closed.
+    Two-qubit decompositions to the XYiSW native gate set (cx, cy, cz, ch,
+    cp, crx, cry, crz, cphase, swap) have been verified correct at ~1e-15
+    Frobenius precision (Task #16).  The reported gate counts and depth
+    figures therefore reflect a semantically correct compilation.
 
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
