@@ -58,3 +58,23 @@ def test_top_level_objects_match_canonical_modules():
             f"lccfq_lang.{name} is not the same object as "
             f"{mod_path}.{name}"
         )
+
+
+def test_all_entries_are_strings():
+    """`__all__` must be list[str], not list of object references — otherwise
+    `from lccfq_lang import *` and pydoc/sphinx introspection misbehave."""
+    pkg = importlib.import_module("lccfq_lang")
+    non_strings = [(i, type(x).__name__) for i, x in enumerate(pkg.__all__)
+                   if not isinstance(x, str)]
+    assert not non_strings, (
+        f"__all__ contains non-string entries: {non_strings}"
+    )
+
+
+def test_star_import_exposes_all_names():
+    """`from lccfq_lang import *` must surface every name in __all__."""
+    ns: dict = {}
+    exec("from lccfq_lang import *", ns)
+    pkg = importlib.import_module("lccfq_lang")
+    missing = [n for n in pkg.__all__ if n not in ns]
+    assert not missing, f"`import *` did not expose: {missing}"
