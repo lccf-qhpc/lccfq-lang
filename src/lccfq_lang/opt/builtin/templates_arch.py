@@ -31,9 +31,10 @@ class HCXHRule(Pass):
     def __init__(self, isa: ISA) -> None:
         self._isa = isa
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
+    def run(self, program: List[Instruction], ctx: PassContext):
         # Walk with index; on a match, append the CZ and skip the three matched ops.
         out: List[Instruction] = []
+        changed = False
         i = 0
         n = len(program)
         while i < n:
@@ -43,11 +44,12 @@ class HCXHRule(Pass):
                 if t is not None:
                     ctrl = b.control_qubits[0]
                     out.append(self._isa.cz(ct=ctrl, tg=t))
+                    changed = True
                     i += 3
                     continue
             out.append(program[i])
             i += 1
-        return out
+        return out, changed
 
     @staticmethod
     def _match_hcxh(a: Instruction, b: Instruction, c: Instruction) -> int | None:
@@ -81,8 +83,9 @@ class SwapElision(Pass):
     def __init__(self, isa: ISA) -> None:
         self._isa = isa
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
+    def run(self, program: List[Instruction], ctx: PassContext):
         out: List[Instruction] = []
+        changed = False
         i = 0
         n = len(program)
         while i < n:
@@ -94,11 +97,12 @@ class SwapElision(Pass):
                     and set(OpView(a).qubits) == set(OpView(b).qubits)
                     and len(OpView(a).qubits) == 2
                 ):
+                    changed = True
                     i += 2
                     continue
             out.append(program[i])
             i += 1
-        return out
+        return out, changed
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +140,15 @@ def register_template(name: str, pass_obj: Pass) -> None:
         )
     if name in TEMPLATE_REGISTRY:
         raise ValueError(f"register_template: name {name!r} is already registered")
+    # Perf #4: verify the pass returns a (program, bool) 2-tuple at registration
+    # time so failures are caught early rather than deep in a pipeline.
+    _ctx_stub = PassContext()
+    _result = pass_obj.run([], _ctx_stub)
+    if not (isinstance(_result, tuple) and len(_result) == 2):
+        raise TypeError(
+            f"register_template: {name!r}.run() must return (program, bool); "
+            f"got {type(_result).__name__}"
+        )
     TEMPLATE_REGISTRY[name] = pass_obj
 
 

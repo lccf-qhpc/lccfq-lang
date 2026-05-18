@@ -85,12 +85,12 @@ class TestLowerU2:
         instr = qpu.isa.x(tg=0)
         program = [instr]
         pass_ = LowerU2(qpu.isa)
-        result = pass_.run(program, ctx)
+        result, _ = pass_.run(program, ctx)
         assert result[0] is program[0]
 
     def test_lower_u2_passthrough_empty_program(self, qpu, ctx):
         pass_ = LowerU2(qpu.isa)
-        result = pass_.run([], ctx)
+        result, _ = pass_.run([], ctx)
         assert result == []
         assert isinstance(result, list)
 
@@ -98,7 +98,7 @@ class TestLowerU2:
         instr = Instruction(symbol="u2", target_qubits=[0], params=[0.5, 1.0])
         program = [instr]
         pass_ = LowerU2(qpu.isa)
-        result = pass_.run(program, ctx)
+        result, _ = pass_.run(program, ctx)
         legacy = qreg.expand(instr)
         assert len(result) == len(legacy)
         for got, expected in zip(result, legacy):
@@ -122,12 +122,12 @@ class TestLowerU3:
         instr = qpu.isa.h(tg=0)
         program = [instr]
         pass_ = LowerU3(qpu.isa)
-        result = pass_.run(program, ctx)
+        result, _ = pass_.run(program, ctx)
         assert result[0] is program[0]
 
     def test_lower_u3_passthrough_empty_program(self, qpu, ctx):
         pass_ = LowerU3(qpu.isa)
-        result = pass_.run([], ctx)
+        result, _ = pass_.run([], ctx)
         assert result == []
         assert isinstance(result, list)
 
@@ -135,7 +135,7 @@ class TestLowerU3:
         instr = Instruction(symbol="u3", target_qubits=[0], params=[0.1, 0.2, 0.3])
         program = [instr]
         pass_ = LowerU3(qpu.isa)
-        result = pass_.run(program, ctx)
+        result, _ = pass_.run(program, ctx)
         legacy = qreg.expand(instr)
         assert len(result) == len(legacy)
         for got, expected in zip(result, legacy):
@@ -159,12 +159,12 @@ class TestLowerCU:
         instr = qpu.isa.cx(ct=0, tg=1)
         program = [instr]
         pass_ = LowerCU(qpu.isa)
-        result = pass_.run(program, ctx)
+        result, _ = pass_.run(program, ctx)
         assert result[0] is program[0]
 
     def test_lower_cu_passthrough_empty_program(self, qpu, ctx):
         pass_ = LowerCU(qpu.isa)
-        result = pass_.run([], ctx)
+        result, _ = pass_.run([], ctx)
         assert result == []
         assert isinstance(result, list)
 
@@ -178,7 +178,7 @@ class TestLowerCU:
         )
         program = [instr]
         pass_ = LowerCU(qpu.isa)
-        result = pass_.run(program, ctx)
+        result, _ = pass_.run(program, ctx)
         legacy = qreg.expand(instr)
         assert len(result) == len(legacy)
         for got, expected in zip(result, legacy):
@@ -208,12 +208,12 @@ class TestFanoutMeasure:
         instr = qpu.isa.x(tg=0)
         program = [instr]
         pass_ = FanoutMeasure(qpu.isa)
-        result = pass_.run(program, ctx)
+        result, _ = pass_.run(program, ctx)
         assert result[0] is program[0]
 
     def test_fanout_measure_passthrough_empty_program(self, qpu, ctx):
         pass_ = FanoutMeasure(qpu.isa)
-        result = pass_.run([], ctx)
+        result, _ = pass_.run([], ctx)
         assert result == []
         assert isinstance(result, list)
 
@@ -221,7 +221,7 @@ class TestFanoutMeasure:
         instr = qpu.isa.measure(tgs=[0, 1, 2])
         program = [instr]
         pass_ = FanoutMeasure(qpu.isa)
-        result = pass_.run(program, ctx)
+        result, _ = pass_.run(program, ctx)
         legacy = qreg.expand(instr)
         assert len(result) == len(legacy)
         for got, expected in zip(result, legacy):
@@ -240,7 +240,7 @@ class TestFanoutMeasure:
         instr = qpu.isa.measure(tgs=[0])
         program = [instr]
         pass_ = FanoutMeasure(qpu.isa)
-        result = pass_.run(program, ctx)
+        result, _ = pass_.run(program, ctx)
         assert len(result) == 1
         assert result[0] is program[0]
 

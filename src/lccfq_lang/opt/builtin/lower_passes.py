@@ -43,8 +43,8 @@ class MappedPass(Pass):
     def __init__(self, qreg: QRegister) -> None:
         self._qreg = qreg
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
-        return list(map(self._qreg.map, program))
+    def run(self, program: List[Instruction], ctx: PassContext):
+        return list(map(self._qreg.map, program)), True
 
 
 class SwappedPass(Pass):
@@ -57,10 +57,10 @@ class SwappedPass(Pass):
         self._qreg = qreg
         self._isa = isa
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
+    def run(self, program: List[Instruction], ctx: PassContext):
         return list(chain.from_iterable(
             map(lambda instr: self._qreg.swaps(instr, self._isa), program)
-        ))
+        )), True
 
 
 class TranspiledPass(Pass):
@@ -78,10 +78,10 @@ class TranspiledPass(Pass):
     def __init__(self, transpiler: Transpiler) -> None:
         self._transpiler = transpiler
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> list:
+    def run(self, program: List[Instruction], ctx: PassContext):
         return list(chain.from_iterable(
             map(self._transpiler.transpile_gate, program)
-        ))
+        )), True
 
 
 def build_lowering_groups(

@@ -122,7 +122,7 @@ def test_passthrough_when_already_adjacent(isa, topo4, ctx4):
         _make_mapped(isa.cx(ct=2, tg=3)),
     ]
     pass_inst = LookaheadSwapInsertion(qreg=None, isa=isa, topology=topo4)
-    result = pass_inst.run(program, ctx4)
+    result, _ = pass_inst.run(program, ctx4)
 
     swaps = [i for i in result if i.symbol == "swap"]
     assert len(swaps) == 0, "No SWAPs expected for adjacent gates"
@@ -142,7 +142,7 @@ def test_inserts_swap_for_non_adjacent(isa, topo4, ctx4):
     After routing, the CNOT gate is on an adjacent edge."""
     program = [_make_mapped(isa.cx(ct=0, tg=3))]
     pass_inst = LookaheadSwapInsertion(qreg=None, isa=isa, topology=topo4)
-    result = pass_inst.run(program, ctx4)
+    result, _ = pass_inst.run(program, ctx4)
 
     swaps = [i for i in result if i.symbol == "swap"]
     assert len(swaps) >= 1, "Expected at least one SWAP for cx(0,3)"
@@ -175,7 +175,7 @@ def test_lookahead_picks_better_path(isa, topo4, ctx4):
 
     # SABRE-lite count.
     pass_inst = LookaheadSwapInsertion(qreg=None, isa=isa, topology=topo4)
-    routed = pass_inst.run(list(program), ctx4)
+    routed, _ = pass_inst.run(list(program), ctx4)
     sabre_swaps = sum(1 for i in routed if i.symbol == "swap")
 
     # Greedy count: sum QPUTopology.swaps per instruction.
@@ -294,12 +294,55 @@ def test_routing_is_deterministic(isa, topo4, ctx4):
     program = [_make_mapped(i) for i in raw]
 
     pass_inst = LookaheadSwapInsertion(qreg=None, isa=isa, topology=topo4)
-    out1 = pass_inst.run(list(program), ctx4)
-    out2 = pass_inst.run(list(program), ctx4)
+    out1, _ = pass_inst.run(list(program), ctx4)
+    out2, _ = pass_inst.run(list(program), ctx4)
 
     assert repr(out1) == repr(out2), (
         "LookaheadSwapInsertion produced non-deterministic output"
     )
+
+
+# ---------------------------------------------------------------------------
+# Test 8b: Perf #5 — _all_pairs_distance is cached per topology
+# ---------------------------------------------------------------------------
+
+def test_perf5_distance_cache_returns_same_object(topo4):
+    """Cached _all_pairs_distance returns the SAME dict instance on repeated
+    calls with the same topology (Python `is`, not just `==`)."""
+    from lccfq_lang.opt.builtin.routing import _all_pairs_distance
+    d1 = _all_pairs_distance(topo4)
+    d2 = _all_pairs_distance(topo4)
+    assert d1 is d2, "expected cached identity-preserved dict"
+
+
+def test_perf5_distance_cache_distinct_topologies(isa, topo4):
+    """Two distinct QPUTopology instances get distinct cache entries."""
+    from lccfq_lang.mach.topology import QPUTopology
+    from lccfq_lang.opt.builtin.routing import _all_pairs_distance
+    # Build a second linear-4 topology independently.
+    import networkx as nx
+    topo4b = QPUTopology.__new__(QPUTopology)
+    topo4b.internal = nx.Graph()
+    topo4b.internal.add_edges_from([(0, 1), (1, 2), (2, 3)])
+    d1 = _all_pairs_distance(topo4)
+    d2 = _all_pairs_distance(topo4b)
+    assert d1 is not d2
+    # But values should be equal (same shape).
+    assert d1 == d2
+
+
+def test_perf5_distance_cache_hits_increase(topo4):
+    """The cache-stats counter records hits after the first compute."""
+    from lccfq_lang.opt.builtin.routing import (
+        _all_pairs_distance, _DISTANCE_CACHE_STATS,
+    )
+    before = dict(_DISTANCE_CACHE_STATS)
+    _all_pairs_distance(topo4)  # cold or hit depending on prior tests
+    _all_pairs_distance(topo4)  # definitely a hit
+    _all_pairs_distance(topo4)  # definitely a hit
+    after = dict(_DISTANCE_CACHE_STATS)
+    # At least 2 hits added (we asked twice after the first guaranteed-cached call).
+    assert after["hits"] - before["hits"] >= 2
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +387,7 @@ def test_equivalence_1q_only(isa, topo4, ctx4):
     program = [_make_mapped(i) for i in raw_program]
 
     pass_inst = LookaheadSwapInsertion(qreg=None, isa=isa, topology=topo4)
-    result = pass_inst.run(list(program), ctx4)
+    result, _ = pass_inst.run(list(program), ctx4)
 
     # No SWAPs expected for 1q program.
     assert not any(i.symbol == "swap" for i in result)
@@ -411,7 +454,7 @@ def test_rewrite_preserves_attributes(isa):
 def test_empty_program_returns_empty(isa, topo4, ctx4):
     """Running LookaheadSwapInsertion on an empty program returns []."""
     pass_inst = LookaheadSwapInsertion(qreg=None, isa=isa, topology=topo4)
-    result = pass_inst.run([], ctx4)
+    result, _ = pass_inst.run([], ctx4)
     assert result == []
 
 
@@ -423,7 +466,7 @@ def test_1q_only_no_swaps_mixed_with_measure(isa, topo4, ctx4):
         _make_mapped(isa.measure(tgs=[0, 1])),
     ]
     pass_inst = LookaheadSwapInsertion(qreg=None, isa=isa, topology=topo4)
-    result = pass_inst.run(program, ctx4)
+    result, _ = pass_inst.run(program, ctx4)
 
     assert not any(i.symbol == "swap" for i in result)
     assert len(result) == 3

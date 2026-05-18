@@ -32,8 +32,9 @@ class LowerU2(Pass):
     def __init__(self, isa: ISA) -> None:
         self._isa = isa
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
+    def run(self, program: List[Instruction], ctx: PassContext):
         out: List[Instruction] = []
+        changed = False
         for instr in program:
             if instr.symbol == "u2":
                 phi = instr.params[0]
@@ -42,9 +43,10 @@ class LowerU2(Pass):
                 out.append(self._isa.rz(tg=tg, params=[phi]))
                 out.append(self._isa.ry(tg=tg, params=[np.pi / 2]))
                 out.append(self._isa.rz(tg=tg, params=[lbmd]))
+                changed = True
             else:
                 out.append(instr)
-        return out
+        return out, changed
 
 
 class LowerU3(Pass):
@@ -56,8 +58,9 @@ class LowerU3(Pass):
     def __init__(self, isa: ISA) -> None:
         self._isa = isa
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
+    def run(self, program: List[Instruction], ctx: PassContext):
         out: List[Instruction] = []
+        changed = False
         for instr in program:
             if instr.symbol == "u3":
                 phi = instr.params[0]
@@ -67,9 +70,10 @@ class LowerU3(Pass):
                 out.append(self._isa.rz(tg=tg, params=[phi]))
                 out.append(self._isa.ry(tg=tg, params=[theta]))
                 out.append(self._isa.rz(tg=tg, params=[lbmd]))
+                changed = True
             else:
                 out.append(instr)
-        return out
+        return out, changed
 
 
 class LowerCU(Pass):
@@ -84,8 +88,9 @@ class LowerCU(Pass):
     def __init__(self, isa: ISA) -> None:
         self._isa = isa
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
+    def run(self, program: List[Instruction], ctx: PassContext):
         out: List[Instruction] = []
+        changed = False
         for instr in program:
             if instr.symbol == "cu":
                 phi = instr.params[0]
@@ -100,9 +105,10 @@ class LowerCU(Pass):
                 out.append(self._isa.rz(tg=tg, params=[-(phi + lbmd)]))
                 out.append(self._isa.cx(ct=ct, tg=tg))
                 out.append(self._isa.rz(tg=tg, params=[phi]))
+                changed = True
             else:
                 out.append(instr)
-        return out
+        return out, changed
 
 
 class FanoutMeasure(Pass):
@@ -117,12 +123,14 @@ class FanoutMeasure(Pass):
     def __init__(self, isa: ISA) -> None:
         self._isa = isa
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
+    def run(self, program: List[Instruction], ctx: PassContext):
         out: List[Instruction] = []
+        changed = False
         for instr in program:
             if instr.symbol == "measure" and len(instr.target_qubits) > 1:
                 for q in instr.target_qubits:
                     out.append(self._isa.measure(tgs=[q]))
+                changed = True
             else:
                 out.append(instr)
-        return out
+        return out, changed

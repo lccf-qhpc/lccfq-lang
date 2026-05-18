@@ -35,12 +35,12 @@ class TestHCXHRule:
         self.pass_ = HCXHRule(isa)
 
     def test_passthrough_empty(self):
-        assert self.pass_.run([], ctx) == []
+        assert self.pass_.run([], ctx)[0] == []
 
     def test_canonical_match(self):
         # H(1) CX(0,1) H(1) -> CZ(0,1)
         program = [isa.h(tg=1), isa.cx(ct=0, tg=1), isa.h(tg=1)]
-        result = self.pass_.run(program, ctx)
+        result, _ = self.pass_.run(program, ctx)
         assert len(result) == 1
         assert result[0].symbol == "cz"
         assert result[0].control_qubits == [0]
@@ -49,12 +49,12 @@ class TestHCXHRule:
     def test_wrong_target_no_match(self):
         # H on the control (qubit 0), not the target (qubit 1) — no match
         program = [isa.h(tg=0), isa.cx(ct=0, tg=1), isa.h(tg=0)]
-        result = self.pass_.run(program, ctx)
+        result, _ = self.pass_.run(program, ctx)
         assert len(result) == 3
 
     def test_no_h_after_no_match(self):
         program = [isa.h(tg=1), isa.cx(ct=0, tg=1), isa.x(tg=1)]
-        result = self.pass_.run(program, ctx)
+        result, _ = self.pass_.run(program, ctx)
         assert len(result) == 3
 
     def test_does_not_mutate(self):
@@ -66,7 +66,7 @@ class TestHCXHRule:
     def test_preserves_semantics(self):
         # H(1) CX(0,1) H(1) == CZ(0,1) semantically
         p_in = [isa.h(tg=1), isa.cx(ct=0, tg=1), isa.h(tg=1)]
-        p_out = self.pass_.run(p_in, ctx)
+        p_out, _ = self.pass_.run(p_in, ctx)
         assert_equivalent(p_in, p_out, 2)
 
 
@@ -79,21 +79,21 @@ class TestSwapElision:
         self.pass_ = SwapElision(isa)
 
     def test_passthrough_empty(self):
-        assert self.pass_.run([], ctx) == []
+        assert self.pass_.run([], ctx)[0] == []
 
     def test_canonical_elision(self):
         program = [isa.swap(tg_a=0, tg_b=1), isa.swap(tg_a=0, tg_b=1)]
-        result = self.pass_.run(program, ctx)
+        result, _ = self.pass_.run(program, ctx)
         assert result == []
 
     def test_symmetric_elision(self):
         program = [isa.swap(tg_a=0, tg_b=1), isa.swap(tg_a=1, tg_b=0)]
-        result = self.pass_.run(program, ctx)
+        result, _ = self.pass_.run(program, ctx)
         assert result == []
 
     def test_different_qubits_no_match(self):
         program = [isa.swap(tg_a=0, tg_b=1), isa.swap(tg_a=0, tg_b=2)]
-        result = self.pass_.run(program, ctx)
+        result, _ = self.pass_.run(program, ctx)
         assert len(result) == 2
 
     def test_does_not_mutate(self):
@@ -108,7 +108,7 @@ class TestSwapElision:
             isa.swap(tg_a=0, tg_b=1),
             isa.cx(ct=0, tg=1),
         ]
-        p_out = self.pass_.run(p_in, ctx)
+        p_out, _ = self.pass_.run(p_in, ctx)
         assert_equivalent(p_in, p_out, 2)
 
 
@@ -125,7 +125,7 @@ class _DummyPass(Pass):
         self._isa = isa
 
     def run(self, program, ctx):
-        return program
+        return list(program), False
 
 
 class TestTemplateRegistry:
@@ -155,7 +155,7 @@ class TestTemplateRegistry:
             applies_to = "mach"
 
             def run(self, program, ctx):
-                return program
+                return list(program), False
 
         with pytest.raises(ValueError, match="applies_to.*must be.*arch"):
             register_template("mach_pass", _MachPass())

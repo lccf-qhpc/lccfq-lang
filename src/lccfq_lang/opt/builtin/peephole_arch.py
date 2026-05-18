@@ -66,10 +66,12 @@ class RemoveIdentity(Pass):
         # not used inside run().
         self._isa = isa
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
+    def run(self, program: List[Instruction], ctx: PassContext):
         out: List[Instruction] = []
+        changed = False
         for instr in program:
             if instr.symbol == "nop":
+                changed = True
                 continue
             if (
                 instr.symbol in MERGEABLE_ROTATIONS
@@ -77,9 +79,10 @@ class RemoveIdentity(Pass):
                 and len(instr.params) == 1
                 and is_zero_angle(instr.params[0])
             ):
+                changed = True
                 continue
             out.append(instr)
-        return out
+        return out, changed
 
 
 # ---------------------------------------------------------------------------
@@ -96,12 +99,13 @@ class CancelInverses(Pass):
     def __init__(self, isa: ISA) -> None:
         self._isa = isa
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
+    def run(self, program: List[Instruction], ctx: PassContext):
         # `survivors` is a list of (idx, instr) where idx is the position
         # in the *output* list. last_op[q] holds the index in `survivors`
         # of the most recent surviving op touching qubit q, or -1.
         survivors: List[Instruction] = []
         last_op: dict[int, int] = {}
+        changed = False
 
         for instr in program:
             qs = OpView(instr).qubits
@@ -117,6 +121,7 @@ class CancelInverses(Pass):
                 if prev is not None and self._cancels(prev, instr):
                     # Remove prev. Mark its slot as a hole.
                     survivors[prev_idx] = None  # type: ignore[assignment]
+                    changed = True
                     # Update last_op: scan back from prev_idx for each qubit in qs.
                     for q in OpView(prev).qubits:
                         new_last = self._previous_op_on(q, survivors, prev_idx)
@@ -132,7 +137,7 @@ class CancelInverses(Pass):
             for q in qs:
                 last_op[q] = new_idx
 
-        return [s for s in survivors if s is not None]
+        return [s for s in survivors if s is not None], changed
 
     @staticmethod
     def _cancels(a: Instruction, b: Instruction) -> bool:
@@ -174,9 +179,10 @@ class MergeRotations(Pass):
     def __init__(self, isa: ISA) -> None:
         self._isa = isa
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
+    def run(self, program: List[Instruction], ctx: PassContext):
         survivors: List[Instruction] = []
         last_op: dict[int, int] = {}
+        changed = False
 
         for instr in program:
             qs = OpView(instr).qubits
@@ -207,6 +213,7 @@ class MergeRotations(Pass):
                             if is_zero_angle(merged_angle):
                                 # Drop both.
                                 survivors[prev_idx] = None  # type: ignore[assignment]
+                                changed = True
                                 new_last = self._previous_op_on(q, survivors, prev_idx)
                                 if new_last < 0:
                                     last_op.pop(q, None)
@@ -217,6 +224,7 @@ class MergeRotations(Pass):
                             merged = self._build_rotation(instr.symbol, q, merged_angle)
                             survivors[prev_idx] = merged
                             last_op[q] = prev_idx
+                            changed = True
                             continue
 
             survivors.append(instr)
@@ -224,7 +232,7 @@ class MergeRotations(Pass):
             for q in qs:
                 last_op[q] = new_idx
 
-        return [s for s in survivors if s is not None]
+        return [s for s in survivors if s is not None], changed
 
     def _build_rotation(self, sym: str, q: int, angle: float) -> Instruction:
         method = getattr(self._isa, sym)
@@ -255,7 +263,7 @@ class FuseEulerZYZ(Pass):
     def __init__(self, isa: ISA) -> None:
         self._isa = isa
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
+    def run(self, program: List[Instruction], ctx: PassContext):
         # Build per-qubit ordered lists of indices, then sweep.
         # For simplicity, do a single forward pass tracking the last
         # *two* surviving ops per qubit.
@@ -265,6 +273,7 @@ class FuseEulerZYZ(Pass):
         #           but only if no other op touched q between last2 and last1.
         last1: dict[int, int] = {}
         last2: dict[int, int] = {}
+        changed = False
 
         for instr in program:
             qs = OpView(instr).qubits
@@ -294,6 +303,7 @@ class FuseEulerZYZ(Pass):
                             # Drop pp, p, and instr entirely.
                             survivors[pp_idx] = None
                             survivors[p_idx] = None
+                            changed = True
                             new_last = self._previous_op_on(q, survivors, pp_idx)
                             if new_last < 0:
                                 last1.pop(q, None)
@@ -314,6 +324,7 @@ class FuseEulerZYZ(Pass):
                         new_idx = len(survivors) - 1
                         last2[q] = p_idx
                         last1[q] = new_idx
+                        changed = True
                         continue
 
             survivors.append(instr)
@@ -323,7 +334,7 @@ class FuseEulerZYZ(Pass):
                     last2[q] = last1[q]
                 last1[q] = new_idx
 
-        return [s for s in survivors if s is not None]
+        return [s for s in survivors if s is not None], changed
 
     @staticmethod
     def _previous_op_on(q: int, survivors: list, before: int) -> int:
@@ -355,19 +366,21 @@ class CommuteThroughControl(Pass):
     def __init__(self, isa: ISA) -> None:
         self._isa = isa
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
+    def run(self, program: List[Instruction], ctx: PassContext):
         out: List[Instruction] = list(program)  # shallow copy; we mutate the list, not the elements
+        changed = False
         i = 0
         while i + 1 < len(out):
             a, b = out[i], out[i + 1]
             if self._can_commute_forward(a, b):
                 out[i], out[i + 1] = b, a
+                changed = True
                 # Advance past the swapped pair; do not re-examine the same
                 # rotation against the next op (avoids oscillation).
                 i += 2
             else:
                 i += 1
-        return out
+        return out, changed
 
     @staticmethod
     def _can_commute_forward(a: Instruction, b: Instruction) -> bool:

@@ -114,9 +114,11 @@ class RemoveIdentityMach(Pass):
 
     def run(self, program, ctx):
         out = []
+        changed = False
         for op in program:
             if isinstance(op, Gate):
                 if op.symbol == "nop":
+                    changed = True
                     continue
                 if (
                     op.symbol in NATIVE_1Q_PARAM
@@ -124,9 +126,10 @@ class RemoveIdentityMach(Pass):
                     and len(op.params) == 1
                     and is_zero_angle(op.params[0])
                 ):
+                    changed = True
                     continue
             out.append(op)
-        return out
+        return out, changed
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +152,7 @@ class MergeAdjacent1Q(Pass):
     def run(self, program, ctx):
         survivors: list = []
         last_op: dict[int, int] = {}
+        changed = False
 
         for op in program:
             qs = OpView(op).qubits
@@ -179,6 +183,7 @@ class MergeAdjacent1Q(Pass):
                         merged_angle = MOD_2PI(prev.params[0] + op.params[0])
                         if is_zero_angle(merged_angle):
                             survivors[prev_idx] = None
+                            changed = True
                             new_last = _previous_op_on(q, survivors, prev_idx)
                             if new_last < 0:
                                 last_op.pop(q, None)
@@ -193,6 +198,7 @@ class MergeAdjacent1Q(Pass):
                         )
                         survivors[prev_idx] = merged
                         last_op[q] = prev_idx
+                        changed = True
                         continue
 
             survivors.append(op)
@@ -200,7 +206,7 @@ class MergeAdjacent1Q(Pass):
             for q in qs:
                 last_op[q] = new_idx
 
-        return [s for s in survivors if s is not None]
+        return [s for s in survivors if s is not None], changed
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +229,7 @@ class EulerXYRecompose(Pass):
         n = len(out)
         i = 0
         result: list = []
+        changed = False
         while i < n:
             op = out[i]
             run_q = self._lone_rotation_qubit(op)
@@ -239,12 +246,13 @@ class EulerXYRecompose(Pass):
                 rewritten = self._try_recompose(run, run_q)
                 if rewritten is not None and len(rewritten) < len(run):
                     result.extend(rewritten)
+                    changed = True
                 else:
                     result.extend(run)
             else:
                 result.extend(run)
             i = j
-        return result
+        return result, changed
 
     @staticmethod
     def _lone_rotation_qubit(op):

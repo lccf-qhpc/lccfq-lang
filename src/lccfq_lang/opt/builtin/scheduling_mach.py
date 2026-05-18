@@ -45,7 +45,18 @@ class DeferMeasurement(Pass):
                 measures.append(op)
             else:
                 non_measures.append(op)
-        return non_measures + measures
+        # changed=True iff there are measures AND the first measure's position
+        # in the original program is before the tail (i.e. deferral actually moves something).
+        if measures and non_measures:
+            # Check if the first measure in the original program was already at the end.
+            first_measure_idx = next(
+                (i for i, op in enumerate(program) if isinstance(op, Gate) and op.symbol in NATIVE_MEASURE),
+                len(program),
+            )
+            changed = first_measure_idx < len(non_measures)
+        else:
+            changed = False
+        return non_measures + measures, changed
 
 
 class ParallelizeLayers(Pass):
@@ -64,8 +75,16 @@ class ParallelizeLayers(Pass):
         self._isa = isa
 
     def run(self, program, ctx):
+        """Tag each Gate with its ASAP layer index.
+
+        Returns ``changed=False`` because the program list is structurally
+        unchanged; the in-place tag update is metadata and does not affect cost.
+        This is a genuine win — after iteration 1 in a fixpoint group,
+        ParallelizeLayers re-tags with the same values (idempotent) and
+        signals no change, allowing the outer loop to break early.
+        """
         if not program:
-            return list(program)
+            return list(program), False
         g = circuit_to_dag(program)
         # ASAP layer = longest path length from any source to this node.
         # Equivalent to nx.dag_longest_path_length restricted to the
@@ -78,4 +97,4 @@ class ParallelizeLayers(Pass):
             op = g.nodes[n]["op"]
             if isinstance(op, Gate):
                 op.tags["layer"] = layer[n]
-        return list(program)
+        return list(program), False

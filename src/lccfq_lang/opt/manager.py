@@ -58,6 +58,10 @@ class PassManager:
         self._last_cost_key: Optional[Tuple[int, str, int]] = None
         self._last_cost_value: Optional[Cost] = None
         self._cache_stats: Dict[str, int] = {"hits": 0, "misses": 0}
+        # Perf #4: when True, verify changed=False claims by computing
+        # cost_after anyway and asserting it equals cost_before.
+        # Off by default for production; enable in CI / debugging.
+        self.debug_assert_changed: bool = False
 
     def run(
         self,
@@ -159,14 +163,42 @@ class PassManager:
                 cost_before = Cost.measure_counts(current, kind, ctx.qpu_config)
             t0 = time.perf_counter()
             if current:
-                new_program = p.run(current, ctx)
+                new_program, changed = p.run(current, ctx)
             else:
-                new_program = current
+                new_program, changed = current, False
             delta = time.perf_counter() - t0
-            if is_last:
-                cost_after = self._measure(new_program, kind, ctx.qpu_config)
+            # Perf #4 (decision C.1a): when changed=False, skip the per-pass
+            # cost_after measurement and reuse cost_before by construction.
+            # For the last pass we still need _measure for the group boundary
+            # (Perf #1 decision C.2), but the Perf #2 cache will hit when the
+            # program object is unchanged.
+            if changed:
+                if is_last:
+                    cost_after = self._measure(new_program, kind, ctx.qpu_config)
+                else:
+                    cost_after = Cost.measure_counts(new_program, kind, ctx.qpu_config)
             else:
-                cost_after = Cost.measure_counts(new_program, kind, ctx.qpu_config)
+                if self.debug_assert_changed:
+                    # Audit: verify the program is cost-equivalent despite
+                    # changed=False. Use measure_counts on BOTH sides so the
+                    # comparison is well-defined (cost_before may come from
+                    # full Cost.measure when is_first=True, which carries a
+                    # non-None ``depth`` that measure_counts would not
+                    # produce on a fresh measurement of the same program).
+                    debug_before = Cost.measure_counts(current, kind, ctx.qpu_config)
+                    debug_after = Cost.measure_counts(new_program, kind, ctx.qpu_config)
+                    assert debug_after == debug_before, (
+                        f"Pass {p.name!r} returned changed=False but cost differs: "
+                        f"{debug_before} -> {debug_after}"
+                    )
+                # Reuse cost_before for cost_after (skip measurement).
+                if is_last:
+                    # Still call _measure so the Perf #2 cache slot is
+                    # populated with the correct program id; the cache will
+                    # likely miss here (new list identity) but that is fine.
+                    cost_after = self._measure(new_program, kind, ctx.qpu_config)
+                else:
+                    cost_after = cost_before
             records.append(PassRecord(
                 pass_name=p.name,
                 group_name=group.name,
@@ -174,6 +206,7 @@ class PassManager:
                 cost_before=cost_before,
                 cost_after=cost_after,
                 delta_seconds=delta,
+                changed=changed,
             ))
             current = new_program
         return current
@@ -210,16 +243,31 @@ class PassManager:
         final_group_cost_after = group_cost_before
 
         for it in range(group.max_iters):
+            # Perf #4 (decision C.3): track whether any pass in this iteration
+            # reported a change. Used for early outer-loop termination.
+            iter_changed = False
             # Inner sweep: use cheap measure_counts for per-pass records.
             for p in group.passes:
                 cost_before = Cost.measure_counts(current, kind, ctx.qpu_config)
                 t0 = time.perf_counter()
                 if current:
-                    new_program = p.run(current, ctx)
+                    new_program, changed = p.run(current, ctx)
                 else:
-                    new_program = current
+                    new_program, changed = current, False
                 delta = time.perf_counter() - t0
-                cost_after = Cost.measure_counts(new_program, kind, ctx.qpu_config)
+                iter_changed = iter_changed or changed
+                # Perf #4 (decision C.1a/fixpoint variant): skip cost_after
+                # measurement when changed=False; reuse cost_before.
+                if changed:
+                    cost_after = Cost.measure_counts(new_program, kind, ctx.qpu_config)
+                else:
+                    if self.debug_assert_changed:
+                        debug_cost = Cost.measure_counts(new_program, kind, ctx.qpu_config)
+                        assert debug_cost == cost_before, (
+                            f"Pass {p.name!r} returned changed=False but cost differs: "
+                            f"{cost_before} -> {debug_cost}"
+                        )
+                    cost_after = cost_before
                 records.append(PassRecord(
                     pass_name=p.name,
                     group_name=group.name,
@@ -227,8 +275,18 @@ class PassManager:
                     cost_before=cost_before,
                     cost_after=cost_after,
                     delta_seconds=delta,
+                    changed=changed,
                 ))
                 current = new_program
+
+            # Perf #4 (decision C.3 — LARGEST WIN): if no pass changed anything
+            # in this entire iteration, convergence is reached. Break BEFORE the
+            # trailing group_cost_after DAG build and scalarize comparison.
+            if not iter_changed:
+                # group_cost_after = group_cost_before by construction.
+                # final_group_cost_after already holds the correct value from
+                # the previous iteration (or initial_group_cost_before for iter 0).
+                break
 
             # Full Cost for termination and group-level report.
             group_cost_after = self._measure(current, kind, ctx.qpu_config)

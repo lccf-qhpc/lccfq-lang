@@ -27,7 +27,7 @@ class NoOp(Pass):
     applies_to = "arch"
 
     def run(self, program, ctx):
-        return list(program)
+        return list(program), False
 
 
 class DropOne(Pass):
@@ -36,7 +36,8 @@ class DropOne(Pass):
     applies_to = "arch"
 
     def run(self, program, ctx):
-        return list(program[1:])
+        changed = len(program) > 0
+        return list(program[1:]), changed
 
 
 class MachNoOp(Pass):
@@ -45,7 +46,7 @@ class MachNoOp(Pass):
     applies_to = "mach"
 
     def run(self, program, ctx):
-        return list(program)
+        return list(program), False
 
 
 class NeverCallPass(Pass):
@@ -346,21 +347,24 @@ class TestPerf1DepthNone:
 
     def test_linear_multi_pass_boundary_has_int_depth(self):
         """Multi-pass linear group: first record's cost_before and last record's
-        cost_after have int depth; middle records may have None depth."""
+        cost_after have int depth; middle records may have None depth.
+
+        Perf #4 note: when a pass returns changed=False, cost_after is set to
+        cost_before (no measurement). For pass 0, cost_before is from
+        _measure (int depth), so cost_after also has int depth. For non-first
+        passes, cost_before is from measure_counts (None depth).
+        """
         group = PassGroup(name="lin", mode="linear",
                           passes=[NoOp(), NoOp(), NoOp()])
         pm = PassManager([group])
         prog = make_arch_program(3)
         _, records, _ = pm.run(prog)
         assert len(records) == 3
-        # First pass pre-cost: full Cost.measure
+        # First pass pre-cost: full Cost.measure — int depth
         assert records[0].cost_before.depth is not None and records[0].cost_before.depth >= 0
-        # Last pass post-cost: full Cost.measure
+        # Last pass post-cost: full Cost.measure — int depth
         assert records[-1].cost_after.depth is not None and records[-1].cost_after.depth >= 0
-        # Middle records (pass 0 post, pass 1 pre, pass 1 post, pass 2 pre): measure_counts
-        # records[0].cost_after: not last → measure_counts → None
-        assert records[0].cost_after.depth is None
-        # records[1].cost_before: not first → measure_counts → None
+        # records[1].cost_before: not first → measure_counts → None depth
         assert records[1].cost_before.depth is None
 
 
@@ -436,7 +440,7 @@ class TestPerf2CostCache:
                 IdentityChecker.seen_ids.append(id(program))
                 out = list(program)
                 IdentityChecker.seen_ids.append(id(out))
-                return out
+                return out, False
 
         IdentityChecker.seen_ids = []
         group = PassGroup(name="g", mode="linear", passes=[IdentityChecker()])
@@ -444,3 +448,241 @@ class TestPerf2CostCache:
         pm.run(make_arch_program(3))
         # Input id and output id must differ (pass returns a new list).
         assert IdentityChecker.seen_ids[0] != IdentityChecker.seen_ids[1]
+
+
+# ---------------------------------------------------------------------------
+# Perf #4 — changed-flag signal
+# ---------------------------------------------------------------------------
+
+class TestPerf4ChangedFlag:
+    """Tests for the Perf #4 changed-flag optimization."""
+
+    def test_perf4_pass_returns_tuple(self):
+        """Every concrete in-tree Pass subclass returns a (program, bool) tuple."""
+        from lccfq_lang.arch.isa import ISA
+        from lccfq_lang.mach.topology import QPUTopology
+        from lccfq_lang.sys.base import QPUConfig
+        from lccfq_lang.opt.builtin.lower_universal import LowerU2, LowerU3, LowerCU, FanoutMeasure
+        from lccfq_lang.opt.builtin.peephole_arch import (
+            RemoveIdentity, CancelInverses, MergeRotations, FuseEulerZYZ, CommuteThroughControl
+        )
+        from lccfq_lang.opt.builtin.templates_arch import HCXHRule, SwapElision
+        from lccfq_lang.opt.builtin.peephole_mach import (
+            RemoveIdentityMach, MergeAdjacent1Q, EulerXYRecompose
+        )
+        from lccfq_lang.opt.builtin.scheduling_mach import DeferMeasurement, ParallelizeLayers
+        from lccfq_lang.opt.builtin.native_synthesis import RyRzRyToHardware
+        from lccfq_lang.opt.builtin.routing import LookaheadSwapInsertion
+
+        _isa = ISA("lccfq")
+        _ctx = PassContext(isa=_isa)
+
+        _topo_spec = {
+            "qpu": {
+                "name": "test",
+                "location": "lab",
+                "topology": "linear",
+                "qubit_count": 2,
+                "qubits": [0, 1],
+                "couplings": [(0, 1)],
+                "exclusions": [],
+            },
+            "network": {"ip": "127.0.0.1", "port": 1234},
+        }
+        _topo = QPUTopology(QPUConfig(_topo_spec))
+
+        # All non-routing passes take (isa,); routing takes (None, isa, topology)
+        isa_passes = [
+            LowerU2, LowerU3, LowerCU, FanoutMeasure,
+            RemoveIdentity, CancelInverses, MergeRotations, FuseEulerZYZ, CommuteThroughControl,
+            HCXHRule, SwapElision,
+            RemoveIdentityMach, MergeAdjacent1Q, EulerXYRecompose,
+            DeferMeasurement, ParallelizeLayers, RyRzRyToHardware,
+        ]
+        for cls in isa_passes:
+            inst = cls(_isa)
+            result = inst.run([], _ctx)
+            assert isinstance(result, tuple) and len(result) == 2, (
+                f"{cls.__name__}.run([]) returned {type(result).__name__}, expected 2-tuple"
+            )
+            out, changed = result
+            assert isinstance(out, list), f"{cls.__name__}: first element must be list"
+            assert isinstance(changed, bool), f"{cls.__name__}: second element must be bool"
+
+        # LookaheadSwapInsertion (qreg=None, isa, topology)
+        lsi = LookaheadSwapInsertion(None, _isa, _topo)
+        result = lsi.run([], _ctx)
+        assert isinstance(result, tuple) and len(result) == 2
+        out, changed = result
+        assert isinstance(out, list)
+        assert isinstance(changed, bool)
+
+    def test_perf4_changed_false_skips_post_cost(self):
+        """A pass returning changed=False causes manager to skip the
+        per-pass cost_after measure_counts call (in fixpoint inner loop)."""
+        call_count = {"n": 0}
+        original_measure_counts = Cost.measure_counts.__func__
+
+        class NoOpChangedFalse(Pass):
+            name = "noop_false"
+            applies_to = "arch"
+
+            def run(self, program, ctx):
+                return list(program), False
+
+        group = PassGroup("g", "fixpoint", [NoOpChangedFalse()], max_iters=5)
+        pm = PassManager([group])
+
+        # Monkey-patch Cost.measure_counts to count calls
+        import lccfq_lang.opt.cost as cost_mod
+        original = cost_mod.Cost.measure_counts
+        call_count = [0]
+
+        @classmethod
+        def spy_measure_counts(cls, program, kind, qpu_config=None):
+            call_count[0] += 1
+            return original.__func__(cls, program, kind, qpu_config)
+
+        cost_mod.Cost.measure_counts = spy_measure_counts
+        try:
+            pm.run(make_arch_program(3))
+        finally:
+            cost_mod.Cost.measure_counts = original
+
+        # With Perf #4: fixpoint breaks after 1 iteration (iter_changed=False).
+        # In that 1 iteration: cost_before is measured (1 call).
+        # cost_after is SKIPPED (changed=False → reuse cost_before).
+        # Total: 1 measure_counts call (cost_before of the single pass).
+        assert call_count[0] == 1, (
+            f"Expected 1 measure_counts call (cost_before only), got {call_count[0]}"
+        )
+
+    def test_perf4_fixpoint_breaks_on_no_change(self):
+        """A fixpoint group of only change-free passes terminates after exactly
+        1 iteration, regardless of max_iters."""
+        class NoOpChangedFalse(Pass):
+            name = "noop_false"
+            applies_to = "arch"
+
+            def run(self, program, ctx):
+                return list(program), False
+
+        group = PassGroup("g", "fixpoint", [NoOpChangedFalse()], max_iters=10)
+        pm = PassManager([group])
+        _, records, _ = pm.run(make_arch_program(3))
+        # With max_iters=10 but iter_changed=False after iteration 0,
+        # we expect exactly 1 record (1 pass × 1 iteration).
+        g_records = [r for r in records if r.group_name == "g"]
+        assert len(g_records) == 1, (
+            f"Expected 1 record (1 iteration), got {len(g_records)}"
+        )
+        assert g_records[0].iteration == 0
+
+    def test_perf4_fixpoint_breaks_skips_final_group_cost_after_measurement(self):
+        """When the outer loop breaks on iter_changed=False, the trailing
+        group_cost_after self._measure() is NOT called.
+        Verified via _cache_stats: only the initial group_cost_before miss
+        should appear; no additional miss for group_cost_after."""
+        class NoOpChangedFalse(Pass):
+            name = "noop_false"
+            applies_to = "arch"
+
+            def run(self, program, ctx):
+                return list(program), False
+
+        group = PassGroup("g", "fixpoint", [NoOpChangedFalse()], max_iters=5)
+        pm = PassManager([group])
+        pm.run(make_arch_program(3))
+        # Initial group_cost_before: 1 miss.
+        # No group_cost_after (skipped on iter_changed=False break).
+        assert pm._cache_stats["misses"] == 1, (
+            f"Expected 1 miss (initial group_cost_before only), got {pm._cache_stats['misses']}"
+        )
+        assert pm._cache_stats["hits"] == 0
+
+    def test_perf4_passrecord_has_changed(self):
+        """PassRecord carries the changed flag from the pass."""
+        class AlwaysChanged(Pass):
+            name = "always_changed"
+            applies_to = "arch"
+
+            def run(self, program, ctx):
+                return list(program), True
+
+        class NeverChanged(Pass):
+            name = "never_changed"
+            applies_to = "arch"
+
+            def run(self, program, ctx):
+                return list(program), False
+
+        group = PassGroup("g", "linear", [AlwaysChanged(), NeverChanged()])
+        pm = PassManager([group])
+        _, records, _ = pm.run(make_arch_program(3))
+        assert records[0].changed is True
+        assert records[1].changed is False
+
+    def test_perf4_changed_false_does_not_skip_in_linear_mode(self):
+        """In a LINEAR group, changed=False does NOT skip subsequent passes
+        (linear groups always run every pass once). Only the per-pass
+        cost_after measure_counts is elided."""
+        calls = []
+
+        class TrackedNoop(Pass):
+            def __init__(self, tag):
+                self.name = tag
+                self.applies_to = "arch"
+
+            def run(self, program, ctx):
+                calls.append(self.name)
+                return list(program), False
+
+        group = PassGroup("g", "linear",
+                          [TrackedNoop("a"), TrackedNoop("b"), TrackedNoop("c")])
+        pm = PassManager([group])
+        pm.run(make_arch_program(3))
+        assert calls == ["a", "b", "c"]
+
+    def test_perf4_changed_true_after_changed_false_still_measures(self):
+        """In a fixpoint iter, a later pass returning changed=True after
+        an earlier pass returning changed=False still produces a valid
+        post-cost record and iter_changed=True allows continuation."""
+        class NoOpFalse(Pass):
+            name = "noop_false"
+            applies_to = "arch"
+
+            def run(self, p, ctx):
+                return list(p), False
+
+        class RemoveOne(Pass):
+            name = "remove_one"
+            applies_to = "arch"
+
+            def run(self, p, ctx):
+                if p:
+                    return list(p[:-1]), True
+                return list(p), False
+
+        group = PassGroup("g", "fixpoint", [NoOpFalse(), RemoveOne()], max_iters=5)
+        pm = PassManager([group])
+        out, records, _ = pm.run(make_arch_program(3))
+        # RemoveOne fires on each non-empty iteration; NoOpFalse never changes.
+        assert any(r.changed for r in records)
+        assert any(not r.changed for r in records)
+
+    def test_perf4_lying_pass_detected_in_debug_mode(self):
+        """In debug mode (PassManager.debug_assert_changed=True), a pass that
+        returns changed=False but DID modify the program raises AssertionError."""
+        class LyingPass(Pass):
+            name = "liar"
+            applies_to = "arch"
+
+            def run(self, p, ctx):
+                # Actually modifies program but claims changed=False.
+                return list(p[:-1]) if p else list(p), False
+
+        group = PassGroup("g", "linear", [LyingPass()])
+        pm = PassManager([group])
+        pm.debug_assert_changed = True
+        with pytest.raises(AssertionError, match="changed=False but cost differs"):
+            pm.run(make_arch_program(3))

@@ -85,7 +85,7 @@ class QRegister:
         program = [instruction]
 
         for pass_cls in (LowerU2, LowerU3, LowerCU, FanoutMeasure):
-            program = pass_cls(self.isa).run(program, ctx)
+            program, _changed = pass_cls(self.isa).run(program, ctx)
         return program
 
     def challenge(self, instruction: Instruction, context: QContext) -> Instruction:

@@ -12,6 +12,7 @@ Contact: nunezco2@illinois.edu
 """
 from __future__ import annotations
 import math
+import weakref
 from itertools import combinations
 from typing import List, Optional
 import networkx as nx
@@ -57,18 +58,35 @@ def _two_qubit_qubits(instr: Instruction) -> Optional[tuple]:
     return (qs[0], qs[1])
 
 
+# Per-topology cache of all-pairs BFS distances. Topology is treated as
+# immutable (no mutation API exists today). WeakKeyDictionary auto-evicts
+# when a topology object is garbage-collected, so this never leaks memory
+# across long-lived processes that construct many QPUs.
+_DISTANCE_CACHE: "weakref.WeakKeyDictionary[QPUTopology, dict]" = weakref.WeakKeyDictionary()
+_DISTANCE_CACHE_STATS = {"hits": 0, "misses": 0}
+
+
 def _all_pairs_distance(topology: QPUTopology) -> dict:
     """Pre-compute BFS all-pairs distances over the topology graph.
+
+    Cached per topology object: the SAME dict instance is returned on every
+    call with the same topology. Callers must NOT mutate the returned dict.
 
     Returns a dict keyed by (src, dst) -> int hop count.
     Same-qubit distance is 0. Unreachable pairs are math.inf.
     """
+    cached = _DISTANCE_CACHE.get(topology)
+    if cached is not None:
+        _DISTANCE_CACHE_STATS["hits"] += 1
+        return cached
+    _DISTANCE_CACHE_STATS["misses"] += 1
     g: nx.Graph = topology.internal
     dist: dict = {}
     for src in g.nodes:
         lengths = nx.single_source_shortest_path_length(g, src)
         for dst, d in lengths.items():
             dist[(src, dst)] = d
+    _DISTANCE_CACHE[topology] = dist
     return dist
 
 
@@ -205,20 +223,22 @@ class LookaheadSwapInsertion(Pass):
         self._isa = isa
         self._topology = topology
 
-    def run(self, program: List[Instruction], ctx: PassContext) -> List[Instruction]:
+    def run(self, program: List[Instruction], ctx: PassContext):
         """Route the program by inserting SWAPs as needed.
 
         :param program: list of already-mapped (physical qubit) Instructions
         :param ctx: pass context (topology read from self._topology)
-        :return: new instruction list with SWAP gates inserted
+        :return: (new instruction list with SWAP gates inserted, changed)
+            changed is True iff at least one SWAP was emitted.
         """
         if not program:
-            return list(program)
+            return list(program), True
 
         topology = self._topology
         distances = _all_pairs_distance(topology)
         emitted: list = []
         queue = list(program)
+        swap_emitted = False  # Perf #4: track whether any SWAP was inserted.
 
         # Identity permutation: current_layout[p] = p for all physical qubits.
         current_layout: dict = {p: p for p in topology.qubits()}
@@ -317,6 +337,7 @@ class LookaheadSwapInsertion(Pass):
             swap_instr = self._isa.swap(tg_a=a, tg_b=b)
             swap_instr.is_mapped = True
             emitted.append(swap_instr)
+            swap_emitted = True
 
             # Update permutation: swap values at the keys that currently
             # hold a and b.
@@ -344,7 +365,7 @@ class LookaheadSwapInsertion(Pass):
                     f"unmappable 2q gate on qubits {head_pair}"
                 )
 
-        return emitted
+        return emitted, swap_emitted
 
 
 # ---------------------------------------------------------------------------
@@ -463,5 +484,5 @@ class LayoutSelection:
 
         # Run routing in cost-oracle mode.
         pass_inst = LookaheadSwapInsertion(qreg=None, isa=isa, topology=topology)
-        routed = pass_inst.run(mapped, PassContext(topology=topology, isa=isa))
+        routed, _changed = pass_inst.run(mapped, PassContext(topology=topology, isa=isa))
         return sum(1 for ins in routed if ins.symbol == "swap")

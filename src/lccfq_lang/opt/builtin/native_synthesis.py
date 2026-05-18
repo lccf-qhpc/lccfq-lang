@@ -43,6 +43,7 @@ class RyRzRyToHardware(Pass):
 
     def run(self, program, ctx):
         out: list = []
+        changed = False
         i = 0
         n = len(program)
         while i + 5 < n:
@@ -53,13 +54,14 @@ class RyRzRyToHardware(Pass):
                 out.append(Gate("ry", [q], None, [-math.pi / 2]))
                 out.append(Gate("rx", [q], None, [MOD_2PI(alpha_plus_beta)]))
                 out.append(Gate("ry", [q], None, [+math.pi / 2]))
+                changed = True
                 i += 6
                 continue
             out.append(program[i])
             i += 1
         # Trailing tail (last <6 ops).
         out.extend(program[i:])
-        return out
+        return out, changed
 
     @staticmethod
     def _matches(window):

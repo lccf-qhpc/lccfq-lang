@@ -79,46 +79,46 @@ def test_gate_to_json_includes_duration_when_set():
 
 def test_remove_identity_drops_nop():
     p = [Gate("nop", [], None, [])]
-    out = RemoveIdentityMach(_StubISA()).run(p, _ctx())
+    out, _ = RemoveIdentityMach(_StubISA()).run(p, _ctx())
     assert out == []
 
 
 def test_remove_identity_drops_zero_rx():
     p = [Gate("rx", [0], None, [0.0])]
-    out = RemoveIdentityMach(_StubISA()).run(p, _ctx())
+    out, _ = RemoveIdentityMach(_StubISA()).run(p, _ctx())
     assert out == []
 
 
 def test_remove_identity_drops_zero_ry():
     p = [Gate("ry", [0], None, [0.0])]
-    out = RemoveIdentityMach(_StubISA()).run(p, _ctx())
+    out, _ = RemoveIdentityMach(_StubISA()).run(p, _ctx())
     assert out == []
 
 
 def test_remove_identity_drops_2pi_rx():
     """An rx(2*pi) is effectively zero angle modulo 2*pi."""
     p = [Gate("rx", [0], None, [2 * math.pi])]
-    out = RemoveIdentityMach(_StubISA()).run(p, _ctx())
+    out, _ = RemoveIdentityMach(_StubISA()).run(p, _ctx())
     assert out == []
 
 
 def test_remove_identity_keeps_nonzero_rx():
     p = [Gate("rx", [0], None, [0.5])]
-    out = RemoveIdentityMach(_StubISA()).run(p, _ctx())
+    out, _ = RemoveIdentityMach(_StubISA()).run(p, _ctx())
     assert len(out) == 1
 
 
 def test_remove_identity_keeps_zero_sqiswap_unaffected():
     # sqiswap is not parametric; never identity here.
     p = [Gate("sqiswap", [0], [1], [])]
-    out = RemoveIdentityMach(_StubISA()).run(p, _ctx())
+    out, _ = RemoveIdentityMach(_StubISA()).run(p, _ctx())
     assert len(out) == 1
 
 
 def test_remove_identity_passes_through_classical_ops():
     control = Control("shot", [100])
     p = [control]
-    out = RemoveIdentityMach(_StubISA()).run(p, _ctx())
+    out, _ = RemoveIdentityMach(_StubISA()).run(p, _ctx())
     assert out == [control]
 
 
@@ -129,7 +129,7 @@ def test_remove_identity_mixed_program():
         Gate("rx", [1], None, [0.0]),
         Gate("sqiswap", [0], [1], []),
     ]
-    out = RemoveIdentityMach(_StubISA()).run(p, _ctx())
+    out, _ = RemoveIdentityMach(_StubISA()).run(p, _ctx())
     assert len(out) == 2
     assert out[0].symbol == "rx" and out[0].params[0] == 0.5
     assert out[1].symbol == "sqiswap"
@@ -142,7 +142,7 @@ def test_merge_adjacent_rx_pair():
         Gate("rx", [0], None, [0.5]),
         Gate("rx", [0], None, [0.3]),
     ]
-    out = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
+    out, _ = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
     assert len(out) == 1
     assert out[0].symbol == "rx"
     assert math.isclose(out[0].params[0], 0.8)
@@ -153,7 +153,7 @@ def test_merge_adjacent_ry_pair():
         Gate("ry", [0], None, [0.7]),
         Gate("ry", [0], None, [0.2]),
     ]
-    out = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
+    out, _ = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
     assert len(out) == 1
     assert out[0].symbol == "ry"
     assert math.isclose(out[0].params[0], 0.9, abs_tol=1e-9)
@@ -164,7 +164,7 @@ def test_merge_adjacent_rx_to_zero_drops_both():
         Gate("rx", [0], None, [0.5]),
         Gate("rx", [0], None, [-0.5]),
     ]
-    out = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
+    out, _ = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
     assert out == []
 
 
@@ -173,7 +173,7 @@ def test_merge_does_not_cross_axis():
         Gate("rx", [0], None, [0.5]),
         Gate("ry", [0], None, [0.5]),
     ]
-    out = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
+    out, _ = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
     assert len(out) == 2
 
 
@@ -182,7 +182,7 @@ def test_merge_does_not_cross_qubit():
         Gate("rx", [0], None, [0.5]),
         Gate("rx", [1], None, [0.5]),
     ]
-    out = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
+    out, _ = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
     assert len(out) == 2
 
 
@@ -193,7 +193,7 @@ def test_merge_blocked_by_intervening_op():
         Gate("ry", [0], None, [0.1]),
         Gate("rx", [0], None, [0.3]),
     ]
-    out = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
+    out, _ = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
     assert len(out) == 3
 
 
@@ -204,7 +204,7 @@ def test_merge_blocked_by_two_qubit_gate():
         Gate("sqiswap", [0], [1], []),
         Gate("rx", [0], None, [0.3]),
     ]
-    out = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
+    out, _ = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
     assert len(out) == 3
 
 
@@ -215,7 +215,7 @@ def test_merge_semantic_equivalence():
         Gate("ry", [0], None, [0.3]),
         Gate("ry", [0], None, [0.4]),
     ]
-    out = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
+    out, _ = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
     assert_equivalent_native(p, out, n_qubits=1)
 
 
@@ -226,7 +226,7 @@ def test_merge_chain_of_three_rx():
         Gate("rx", [0], None, [0.2]),
         Gate("rx", [0], None, [0.3]),
     ]
-    out = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
+    out, _ = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
     # After one pass: first two merge to rx(0.3), then rx(0.3)+rx(0.3)=rx(0.6)
     # Actually: in one pass the pass is forward. first two merge -> rx(0.3),
     # then that merged op vs rx(0.3) -> rx(0.6).
@@ -243,7 +243,7 @@ def test_merge_parallel_qubits_independent():
         Gate("rx", [0], None, [0.3]),
         Gate("rx", [1], None, [0.4]),
     ]
-    out = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
+    out, _ = MergeAdjacent1Q(_StubISA()).run(p, _ctx())
     assert len(out) == 2
     symbols = [op.symbol for op in out]
     assert symbols == ["rx", "rx"]
@@ -291,7 +291,7 @@ def test_euler_recompose_only_fires_on_runs_geq_4():
         Gate("ry", [0], None, [0.2]),
         Gate("rx", [0], None, [0.3]),
     ]
-    out = EulerXYRecompose(_StubISA()).run(p, _ctx())
+    out, _ = EulerXYRecompose(_StubISA()).run(p, _ctx())
     assert len(out) == 3  # unchanged
 
 
@@ -303,7 +303,7 @@ def test_euler_recompose_reduces_5_to_at_most_3():
         Gate("ry", [0], None, [0.4]),
         Gate("rx", [0], None, [0.5]),
     ]
-    out = EulerXYRecompose(_StubISA()).run(p, _ctx())
+    out, _ = EulerXYRecompose(_StubISA()).run(p, _ctx())
     assert 1 <= len(out) <= 3
     assert_equivalent_native(p, out, n_qubits=1)
 
@@ -316,7 +316,7 @@ def test_euler_recompose_skips_when_not_reducing():
         Gate("ry", [0], None, [0.3]),
         Gate("rx", [0], None, [0.4]),
     ]
-    out = EulerXYRecompose(_StubISA()).run(p, _ctx())
+    out, _ = EulerXYRecompose(_StubISA()).run(p, _ctx())
     assert len(out) <= 4
     assert_equivalent_native(p, out, n_qubits=1)
 
@@ -333,7 +333,7 @@ def test_euler_recompose_does_not_touch_different_qubit():
         Gate("rx", [1], None, [0.7]),
         Gate("ry", [1], None, [0.8]),
     ]
-    out = EulerXYRecompose(_StubISA()).run(p, _ctx())
+    out, _ = EulerXYRecompose(_StubISA()).run(p, _ctx())
     assert len(out) <= 6  # both runs reduced
     assert_equivalent_native(p, out, n_qubits=2)
 
@@ -347,7 +347,7 @@ def test_euler_recompose_broken_by_two_qubit_op():
         Gate("rx", [0], None, [0.3]),
         Gate("ry", [0], None, [0.4]),
     ]
-    out = EulerXYRecompose(_StubISA()).run(p, _ctx())
+    out, _ = EulerXYRecompose(_StubISA()).run(p, _ctx())
     # Neither sub-run has length >=4, so all 5 gates pass through.
     assert len(out) == 5
 
@@ -362,6 +362,6 @@ def test_euler_recompose_semantic_6_gate_run():
         Gate("rx", [0], None, [0.5]),
         Gate("ry", [0], None, [0.6]),
     ]
-    out = EulerXYRecompose(_StubISA()).run(p, _ctx())
+    out, _ = EulerXYRecompose(_StubISA()).run(p, _ctx())
     assert len(out) <= 3
     assert_equivalent_native(p, out, n_qubits=1)

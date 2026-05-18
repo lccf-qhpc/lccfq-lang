@@ -33,7 +33,7 @@ def test_defer_measurement_moves_to_end():
         Gate("measure", [0], None, []),
         Gate("ry", [1], None, [0.2]),
     ]
-    out = DeferMeasurement(_StubISA()).run(p, _ctx())
+    out, _ = DeferMeasurement(_StubISA()).run(p, _ctx())
     assert [op.symbol for op in out] == ["rx", "ry", "measure"]
 
 
@@ -43,7 +43,7 @@ def test_defer_measurement_preserves_measure_order():
         Gate("rx", [0], None, [0.1]),
         Gate("measure", [1], None, []),
     ]
-    out = DeferMeasurement(_StubISA()).run(p, _ctx())
+    out, _ = DeferMeasurement(_StubISA()).run(p, _ctx())
     assert [op.symbol for op in out] == ["rx", "measure", "measure"]
     assert out[1].target_qubits == [0]
     assert out[2].target_qubits == [1]
@@ -54,7 +54,7 @@ def test_defer_measurement_no_measures_passes_through():
         Gate("rx", [0], None, [0.1]),
         Gate("ry", [1], None, [0.2]),
     ]
-    out = DeferMeasurement(_StubISA()).run(p, _ctx())
+    out, _ = DeferMeasurement(_StubISA()).run(p, _ctx())
     assert [op.symbol for op in out] == ["rx", "ry"]
 
 
@@ -63,12 +63,12 @@ def test_defer_measurement_only_measures():
         Gate("measure", [0], None, []),
         Gate("measure", [1], None, []),
     ]
-    out = DeferMeasurement(_StubISA()).run(p, _ctx())
+    out, _ = DeferMeasurement(_StubISA()).run(p, _ctx())
     assert [op.symbol for op in out] == ["measure", "measure"]
 
 
 def test_defer_measurement_empty_program():
-    out = DeferMeasurement(_StubISA()).run([], _ctx())
+    out, _ = DeferMeasurement(_StubISA()).run([], _ctx())
     assert out == []
 
 
@@ -79,7 +79,7 @@ def test_defer_measurement_does_not_move_reset():
         Gate("reset", [0], None, []),
         Gate("rx", [0], None, [0.1]),
     ]
-    out = DeferMeasurement(_StubISA()).run(p, _ctx())
+    out, _ = DeferMeasurement(_StubISA()).run(p, _ctx())
     # measure moves to end; reset and rx stay in original relative order.
     symbols = [op.symbol for op in out]
     assert symbols == ["reset", "rx", "measure"]
@@ -93,7 +93,7 @@ def test_defer_measurement_classical_ops_stay():
         ctrl,
         Gate("rx", [0], None, [0.5]),
     ]
-    out = DeferMeasurement(_StubISA()).run(p, _ctx())
+    out, _ = DeferMeasurement(_StubISA()).run(p, _ctx())
     # ctrl and rx are non-measure, measure goes to end.
     assert out[0] is ctrl
     assert out[1].symbol == "rx"
@@ -103,7 +103,7 @@ def test_defer_measurement_classical_ops_stay():
 def test_defer_measurement_returns_new_list():
     """The returned list must be a different object (no aliasing)."""
     p = [Gate("rx", [0], None, [0.1])]
-    out = DeferMeasurement(_StubISA()).run(p, _ctx())
+    out, _ = DeferMeasurement(_StubISA()).run(p, _ctx())
     assert out is not p
 
 
@@ -116,7 +116,7 @@ def test_parallelize_layers_writes_tags():
         Gate("sqiswap", [0], [1], []),      # layer 1
         Gate("rx", [0], None, [0.3]),       # layer 2
     ]
-    out = ParallelizeLayers(_StubISA()).run(p, _ctx())
+    out, _ = ParallelizeLayers(_StubISA()).run(p, _ctx())
     assert out[0].tags["layer"] == 0
     assert out[1].tags["layer"] == 0
     assert out[2].tags["layer"] == 1
@@ -129,7 +129,7 @@ def test_parallelize_layers_does_not_reorder():
         Gate("ry", [1], None, [0.2]),
         Gate("rx", [2], None, [0.3]),
     ]
-    out = ParallelizeLayers(_StubISA()).run(p, _ctx())
+    out, _ = ParallelizeLayers(_StubISA()).run(p, _ctx())
     # Same identity preservation: tags written in place.
     for orig, new in zip(p, out):
         assert orig is new
@@ -142,20 +142,20 @@ def test_parallelize_layers_single_qubit_chain():
         Gate("ry", [0], None, [0.2]),
         Gate("rx", [0], None, [0.3]),
     ]
-    out = ParallelizeLayers(_StubISA()).run(p, _ctx())
+    out, _ = ParallelizeLayers(_StubISA()).run(p, _ctx())
     layers = [op.tags["layer"] for op in out]
     assert layers == [0, 1, 2]
 
 
 def test_parallelize_layers_empty_program():
-    out = ParallelizeLayers(_StubISA()).run([], _ctx())
+    out, _ = ParallelizeLayers(_StubISA()).run([], _ctx())
     assert out == []
 
 
 def test_parallelize_layers_returns_new_list():
     """The returned list must be a different list object."""
     p = [Gate("rx", [0], None, [0.1])]
-    out = ParallelizeLayers(_StubISA()).run(p, _ctx())
+    out, _ = ParallelizeLayers(_StubISA()).run(p, _ctx())
     assert out is not p
 
 
@@ -166,7 +166,7 @@ def test_parallelize_layers_all_parallel():
         Gate("rx", [1], None, [0.2]),
         Gate("rx", [2], None, [0.3]),
     ]
-    out = ParallelizeLayers(_StubISA()).run(p, _ctx())
+    out, _ = ParallelizeLayers(_StubISA()).run(p, _ctx())
     for op in out:
         assert op.tags["layer"] == 0
 
@@ -178,7 +178,7 @@ def test_parallelize_layers_classical_not_tagged():
         Gate("rx", [0], None, [0.1]),
         ctrl,
     ]
-    out = ParallelizeLayers(_StubISA()).run(p, _ctx())
+    out, _ = ParallelizeLayers(_StubISA()).run(p, _ctx())
     assert out[0].tags["layer"] == 0
     assert not hasattr(ctrl, "tags") or "layer" not in ctrl.tags
 
@@ -188,5 +188,5 @@ def test_parallelize_layers_mutates_in_place():
     Gate objects should also see the tags after the pass runs."""
     g = Gate("rx", [0], None, [0.1])
     p = [g]
-    _ = ParallelizeLayers(_StubISA()).run(p, _ctx())
+    _, _ = ParallelizeLayers(_StubISA()).run(p, _ctx())
     assert g.tags.get("layer") == 0
