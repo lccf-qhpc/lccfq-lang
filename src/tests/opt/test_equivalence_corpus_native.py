@@ -106,7 +106,7 @@ def _run_to_mach(arch_program, opt_level: int, n_qubits: int):
         mapping=qpu.mapping,
         topology=qpu.mapping.topology,
     )
-    program, _ = PassManager(groups).run(list(arch_program), ctx)
+    program, _, _ = PassManager(groups).run(list(arch_program), ctx)
     return program
 
 

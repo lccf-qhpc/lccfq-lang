@@ -209,3 +209,87 @@ def test_report_per_level(qpu_mach, level):
         # arch_opt is fixpoint
         arch = next(g for g in rep["groups"] if g["name"] == "arch_opt")
         assert arch["mode"] == "fixpoint"
+
+
+# ---------------------------------------------------------------------------
+# Perf #1 — per-pass depth=None and group-level depth invariants
+# ---------------------------------------------------------------------------
+
+def test_report_group_boundaries_have_int_depth(qpu_mach):
+    """groups[i].cost_before/cost_after must always have an int 'depth' field."""
+    qpu = qpu_mach
+    qreg = qpu.qregister(2)
+    creg = CRegister(2)
+    with Circuit(qreg, creg, qpu, shots=1, opt_level=2,
+                 report=True) as c:
+        _bell(c, qpu)
+    rep = c.opt_report
+    for g in rep["groups"]:
+        assert g["cost_before"]["depth"] is not None, (
+            f"Group {g['name']}: cost_before depth is None"
+        )
+        assert isinstance(g["cost_before"]["depth"], int), (
+            f"Group {g['name']}: cost_before depth not int: {g['cost_before']['depth']!r}"
+        )
+        assert g["cost_after"]["depth"] is not None, (
+            f"Group {g['name']}: cost_after depth is None"
+        )
+        assert isinstance(g["cost_after"]["depth"], int), (
+            f"Group {g['name']}: cost_after depth not int: {g['cost_after']['depth']!r}"
+        )
+
+
+def test_report_totals_have_int_depth(qpu_mach):
+    """totals.cost_before/cost_after always have int 'depth' (pipeline-level full Cost)."""
+    qpu = qpu_mach
+    qreg = qpu.qregister(2)
+    creg = CRegister(2)
+    with Circuit(qreg, creg, qpu, shots=1, opt_level=2,
+                 report=True) as c:
+        _bell(c, qpu)
+    rep = c.opt_report
+    t = rep["totals"]
+    assert t["cost_before"]["depth"] is not None
+    assert isinstance(t["cost_before"]["depth"], int)
+    assert t["cost_after"]["depth"] is not None
+    assert isinstance(t["cost_after"]["depth"], int)
+
+
+def test_report_per_pass_depth_none_for_fixpoint_inner(qpu_mach):
+    """For fixpoint groups, every per-pass cost_before/cost_after has depth=None."""
+    qpu = qpu_mach
+    qreg = qpu.qregister(2)
+    creg = CRegister(2)
+    with Circuit(qreg, creg, qpu, shots=1, opt_level=1,
+                 report=True) as c:
+        _bell(c, qpu)
+    rep = c.opt_report
+    for g in rep["groups"]:
+        if g["mode"] == "fixpoint":
+            for p in g["passes"]:
+                assert p["cost_before"]["depth"] is None, (
+                    f"Fixpoint group {g['name']} pass {p['name']}: "
+                    f"expected depth=None, got {p['cost_before']['depth']!r}"
+                )
+                assert p["cost_after"]["depth"] is None, (
+                    f"Fixpoint group {g['name']} pass {p['name']}: "
+                    f"expected depth=None, got {p['cost_after']['depth']!r}"
+                )
+
+
+def test_report_is_still_json_serializable_with_none_depths(qpu_mach):
+    """None depth values must JSON-encode without error (null in JSON)."""
+    qpu = qpu_mach
+    qreg = qpu.qregister(2)
+    creg = CRegister(2)
+    with Circuit(qreg, creg, qpu, shots=1, opt_level=2,
+                 report=True) as c:
+        _bell(c, qpu)
+    serialized = json.dumps(c.opt_report)  # must not raise
+    parsed = json.loads(serialized)
+    # Confirm per-pass nulls survived the round-trip
+    for g in parsed["groups"]:
+        if g["mode"] == "fixpoint":
+            for p in g["passes"]:
+                assert p["cost_before"]["depth"] is None
+                assert p["cost_after"]["depth"] is None

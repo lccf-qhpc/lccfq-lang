@@ -243,3 +243,88 @@ def test_scalarize_with_error_term():
         + DEFAULT_WEIGHTS["count_1q"] * 1
         + error_term
     )
+
+
+# ---------------------------------------------------------------------------
+# measure_counts (Perf #1)
+# ---------------------------------------------------------------------------
+
+def test_measure_counts_returns_none_depth():
+    """measure_counts on an empty program: depth is None, not 0."""
+    c = Cost.measure_counts([], "arch")
+    assert c.depth is None
+    assert c == Cost(None, 0, 0, 0, None)
+
+
+def test_measure_counts_counts_match_measure(prog4):
+    """measure_counts produces the same count/error fields as measure."""
+    full  = Cost.measure(prog4, "arch")
+    cheap = Cost.measure_counts(prog4, "arch")
+    assert cheap.count_1q        == full.count_1q
+    assert cheap.count_2q        == full.count_2q
+    assert cheap.count_native_2q == full.count_native_2q
+    assert cheap.estimated_error == full.estimated_error
+    assert cheap.depth is None
+    assert full.depth is not None and full.depth >= 0
+
+
+def test_measure_counts_does_not_build_dag(monkeypatch, prog4):
+    """Belt-and-braces: assert circuit_to_dag is not invoked by the cheap path."""
+    import lccfq_lang.opt.cost as cost_mod
+    calls = {"n": 0}
+    orig = cost_mod.circuit_to_dag
+    def spy(p):
+        calls["n"] += 1
+        return orig(p)
+    monkeypatch.setattr(cost_mod, "circuit_to_dag", spy)
+    Cost.measure_counts(prog4, "arch")
+    assert calls["n"] == 0
+    Cost.measure(prog4, "arch")
+    assert calls["n"] == 1
+
+
+def test_measure_counts_with_calibration_returns_error():
+    """measure_counts propagates calibration-based estimated_error."""
+    class DummyCfg:
+        calibration = {"per_gate_error": {"x": 0.01}}
+    op = Instruction(symbol="x", target_qubits=[0])
+    c = Cost.measure_counts([op], "arch", qpu_config=DummyCfg())
+    assert c.estimated_error == pytest.approx(1.0 - 0.01, abs=1e-12)
+    assert c.depth is None
+
+
+def test_measure_counts_empty_with_calibration():
+    """measure_counts on empty program + calibration: estimated_error=1.0, depth=None."""
+    class DummyCfg:
+        calibration = {"per_gate_error": {"x": 0.01}}
+    c = Cost.measure_counts([], "arch", qpu_config=DummyCfg())
+    assert c == Cost(None, 0, 0, 0, 1.0)
+    assert c.depth is None
+
+
+def test_scalarize_handles_none_depth():
+    """scalarize() omits the depth term when depth is None (same idiom as error)."""
+    from lccfq_lang.opt.cost import DEFAULT_WEIGHTS
+    c = Cost(depth=None, count_1q=2, count_2q=1, count_native_2q=0, estimated_error=None)
+    expected = (
+        DEFAULT_WEIGHTS["count_1q"] * 2
+        + DEFAULT_WEIGHTS["count_2q"] * 1
+    )
+    assert c.scalarize() == pytest.approx(expected)
+
+
+def test_scalarize_none_depth_with_error():
+    """scalarize() with depth=None and a real error term."""
+    from lccfq_lang.opt.cost import DEFAULT_WEIGHTS
+    c = Cost(depth=None, count_1q=0, count_2q=0, count_native_2q=0, estimated_error=0.9)
+    expected = DEFAULT_WEIGHTS["error"] * (1.0 - 0.9)
+    assert c.scalarize() == pytest.approx(expected)
+
+
+def test_scalarize_none_depth_matches_zero_depth_counts():
+    """For pure count-based comparison, None-depth and zero-depth agree on counts."""
+    from lccfq_lang.opt.cost import DEFAULT_WEIGHTS
+    c_none = Cost(depth=None, count_1q=3, count_2q=2, count_native_2q=1, estimated_error=None)
+    c_zero = Cost(depth=0,    count_1q=3, count_2q=2, count_native_2q=1, estimated_error=None)
+    # None-depth omits depth term; depth=0 contributes 0 to the sum — both equal.
+    assert c_none.scalarize() == pytest.approx(c_zero.scalarize())

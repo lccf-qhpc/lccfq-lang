@@ -276,7 +276,7 @@ class TestLowerExpandGroup:
         expand_group = all_groups[expand_idx]
         pm = PassManager([expand_group])
         ctx = PassContext(isa=qpu.isa, mapping=qreg.mapping)
-        result, _ = pm.run(program, ctx)
+        result, _, _ = pm.run(program, ctx)
 
         assert len(result) == len(legacy_out)
         for got, expected in zip(result, legacy_out):
@@ -303,7 +303,7 @@ class TestLowerExpandGroup:
         expand_group = all_groups[expand_idx]
         pm = PassManager([expand_group])
         ctx = PassContext(isa=qpu.isa, mapping=qreg.mapping)
-        _, records = pm.run(program, ctx)
+        _, records, _ = pm.run(program, ctx)
 
         lower_expand_records = [r for r in records if r.group_name == "lower_expand"]
         assert len(lower_expand_records) == 4

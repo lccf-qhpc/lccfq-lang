@@ -104,6 +104,7 @@ class Circuit:
         self.verbose = verbose
         self.instructions: List[Instruction] = list()
         self._opt_records = []
+        self._opt_groups_meta: dict[str, tuple] = {}
         self._opt_level = opt_level
         self._opt_passes = opt_passes
         self._report = report
@@ -193,6 +194,7 @@ class Circuit:
                     out_cost=pipeline_in_cost,   # parsed = no transformation
                     last_pass="parsed",
                     effective_strategy=self.qreg.mapping.routing_strategy,
+                    groups_meta={},
                 )
             return True
 
@@ -241,8 +243,9 @@ class Circuit:
             mapping=qreg_for_run.mapping,
             topology=qreg_for_run.mapping.topology,
         )
-        program, records = PassManager(groups).run(self.instructions, ctx)
+        program, records, groups_meta = PassManager(groups).run(self.instructions, ctx)
         self._opt_records = records
+        self._opt_groups_meta = groups_meta
         self._handle_pass(program, last_pass)
 
         if self._report:
@@ -265,6 +268,7 @@ class Circuit:
                 out_cost=pipeline_out_cost,
                 last_pass=last_pass,
                 effective_strategy=effective_strategy,
+                groups_meta=self._opt_groups_meta,
             )
 
         return True
@@ -278,12 +282,26 @@ class Circuit:
         out_cost,
         last_pass: str,
         effective_strategy: str,
+        groups_meta: dict | None = None,
     ) -> dict:
         """Assemble the structured opt_report dict from self._opt_records and
         pre/post pipeline costs.
 
+        Parameters
+        ----------
+        groups_meta:
+            Mapping from group name to ``(group_cost_before, group_cost_after)``
+            for fixpoint groups, as returned by :meth:`PassManager.run` (Perf #1).
+            When provided, fixpoint group boundaries use these full-Cost values
+            instead of ``rs[0].cost_before`` / ``rs[-1].cost_after``, which may
+            have ``depth=None`` under Perf #1.  Linear groups are absent from
+            this dict and continue to derive boundaries from records.
+
         Side-effect-free; safe to call from __exit__ exactly once.
         """
+        if groups_meta is None:
+            groups_meta = {}
+
         # Group records by group_name preserving first-seen order.
         groups_in_order: list[str] = []
         by_group: dict[str, list] = {}
@@ -305,8 +323,14 @@ class Circuit:
             # iterations = max_it + 1 for fixpoint; 1 for linear
             iterations = max_it + 1 if mode == "fixpoint" else 1
 
-            group_in_cost = rs[0].cost_before
-            group_out_cost = rs[-1].cost_after
+            # For fixpoint groups, use the full-Cost group-boundary values from
+            # groups_meta (real depth); for linear groups, fall back to the
+            # first/last records (which use full Cost.measure under Perf #1 C.2).
+            if gname in groups_meta:
+                group_in_cost, group_out_cost = groups_meta[gname]
+            else:
+                group_in_cost = rs[0].cost_before
+                group_out_cost = rs[-1].cost_after
             group_entries.append({
                 "name": gname,
                 "mode": mode,

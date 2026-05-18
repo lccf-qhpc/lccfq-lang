@@ -68,6 +68,6 @@ def test_random_circuit_equivalence(seed, opt_level):
         passes,
         max_iters=max_iters_for_level(opt_level),
     )
-    optimized, _ = PassManager([group]).run(list(program), PassContext(isa=isa))
+    optimized, _, _ = PassManager([group]).run(list(program), PassContext(isa=isa))
 
     assert_equivalent(program, optimized, n_qubits)

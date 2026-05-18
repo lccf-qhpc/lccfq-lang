@@ -13,7 +13,7 @@ Contact: nunezco2@illinois.edu
 from __future__ import annotations
 import time
 from dataclasses import dataclass
-from typing import Any, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from lccfq_lang.arch.instruction import Instruction
 from lccfq_lang.mach.ir import Command
 from .pass_base import Pass, PassContext, PassRecord
@@ -57,11 +57,33 @@ class PassManager:
         self,
         program: List[Any],
         ctx: Optional[PassContext] = None,
-    ) -> Tuple[List[Any], List[PassRecord]]:
-        """Apply all groups to *program* and return the transformed program and telemetry.
+    ) -> Tuple[List[Any], List[PassRecord], Dict[str, Tuple[Cost, Cost]]]:
+        """Apply all groups to *program* and return the transformed program,
+        telemetry records, and group-level boundary Costs for fixpoint groups.
+
+        Returns
+        -------
+        (program, records, groups_meta)
+            program:
+                The fully-transformed program list.
+            records:
+                One :class:`PassRecord` per pass execution.
+            groups_meta:
+                Mapping from group name to ``(group_cost_before, group_cost_after)``
+                for **fixpoint** groups only.  Both Costs in the tuple are produced
+                by full :meth:`Cost.measure` calls (with real depth) and are suitable
+                for group-level report telemetry.  Linear groups are absent from this
+                dict; their group-boundary Costs are derived from the first/last
+                records (which use full :meth:`Cost.measure` under Perf #1 decision
+                C.2).
 
         The original *program* list is never mutated; element identity may be
         shared between the input and output.
+
+        .. note::
+            **Breaking change (Perf #1):** this method previously returned a
+            2-tuple ``(program, records)``.  It now returns a 3-tuple.  The
+            only in-tree caller (``arch/context.py``) has been updated.
         """
         if ctx is None:
             ctx = PassContext()
@@ -69,6 +91,7 @@ class PassManager:
 
         current = list(program)
         records: List[PassRecord] = []
+        groups_meta: Dict[str, Tuple[Cost, Cost]] = {}
 
         for group in self.groups:
             kind = "arch" if group.passes[0].applies_to == "arch" else "mach"
@@ -89,9 +112,10 @@ class PassManager:
             if group.mode == "linear":
                 current = self._run_linear(group, current, ctx, kind, records)
             else:
-                current = self._run_fixpoint(group, current, ctx, kind, records)
+                current, gmeta = self._run_fixpoint(group, current, ctx, kind, records)
+                groups_meta[group.name] = gmeta
 
-        return (current, records)
+        return (current, records, groups_meta)
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -105,16 +129,29 @@ class PassManager:
         kind: str,
         records: List[PassRecord],
     ) -> List[Any]:
+        """Run all passes in *group* once, in order.
+
+        **Perf #1 (decision C.2):** the first pass's ``cost_before`` and the
+        last pass's ``cost_after`` use full :meth:`Cost.measure` (DAG built),
+        so that :func:`_build_opt_report` can derive group-level depth from
+        ``rs[0].cost_before`` / ``rs[-1].cost_after`` as today.  All other
+        per-pass costs use the cheaper :meth:`Cost.measure_counts` (no DAG).
+        """
         current = program
-        for p in group.passes:
-            cost_before = Cost.measure(current, kind, ctx.qpu_config)
+        n_passes = len(group.passes)
+        for i, p in enumerate(group.passes):
+            is_first = (i == 0)
+            is_last = (i == n_passes - 1)
+            measure_pre = Cost.measure if is_first else Cost.measure_counts
+            cost_before = measure_pre(current, kind, ctx.qpu_config)
             t0 = time.perf_counter()
             if current:
                 new_program = p.run(current, ctx)
             else:
                 new_program = current
             delta = time.perf_counter() - t0
-            cost_after = Cost.measure(new_program, kind, ctx.qpu_config)
+            measure_post = Cost.measure if is_last else Cost.measure_counts
+            cost_after = measure_post(new_program, kind, ctx.qpu_config)
             records.append(PassRecord(
                 pass_name=p.name,
                 group_name=group.name,
@@ -133,21 +170,41 @@ class PassManager:
         ctx: PassContext,
         kind: str,
         records: List[PassRecord],
-    ) -> List[Any]:
+    ) -> Tuple[List[Any], Tuple[Cost, Cost]]:
+        """Run passes in *group* in a fixpoint loop until convergence or max_iters.
+
+        Returns
+        -------
+        (current, (initial_group_cost_before, final_group_cost_after))
+            The group-boundary Costs are both produced by full
+            :meth:`Cost.measure` calls (with real depth) for use in
+            ``groups_meta`` and ultimately :func:`_build_opt_report`.
+
+        **Perf #1:** the outer ``group_cost_before`` / ``group_cost_after``
+        remain full :meth:`Cost.measure` calls (fixpoint termination semantics
+        preserved; group-level report depth is accurate).  The inner per-pass
+        ``cost_before`` / ``cost_after`` use :meth:`Cost.measure_counts` (no
+        DAG), eliminating the bulk of DAG builds per compile.
+        """
         current = program
-        group_cost_before = Cost.measure(current, kind, ctx.qpu_config)
+        # Full Cost for group boundary — both report accuracy and termination.
+        initial_group_cost_before = Cost.measure(current, kind, ctx.qpu_config)
+        group_cost_before = initial_group_cost_before
+        # Initialise so the return value is always defined (handles max_iters=0
+        # corner case, though PassGroup validation requires max_iters >= 1).
+        final_group_cost_after = group_cost_before
 
         for it in range(group.max_iters):
-            # Inner sweep over passes
+            # Inner sweep: use cheap measure_counts for per-pass records.
             for p in group.passes:
-                cost_before = Cost.measure(current, kind, ctx.qpu_config)
+                cost_before = Cost.measure_counts(current, kind, ctx.qpu_config)
                 t0 = time.perf_counter()
                 if current:
                     new_program = p.run(current, ctx)
                 else:
                     new_program = current
                 delta = time.perf_counter() - t0
-                cost_after = Cost.measure(new_program, kind, ctx.qpu_config)
+                cost_after = Cost.measure_counts(new_program, kind, ctx.qpu_config)
                 records.append(PassRecord(
                     pass_name=p.name,
                     group_name=group.name,
@@ -158,7 +215,9 @@ class PassManager:
                 ))
                 current = new_program
 
+            # Full Cost for termination and group-level report.
             group_cost_after = Cost.measure(current, kind, ctx.qpu_config)
+            final_group_cost_after = group_cost_after
             improvement = (
                 group_cost_before.scalarize() - group_cost_after.scalarize()
             )
@@ -166,4 +225,4 @@ class PassManager:
                 break
             group_cost_before = group_cost_after
 
-        return current
+        return current, (initial_group_cost_before, final_group_cost_after)

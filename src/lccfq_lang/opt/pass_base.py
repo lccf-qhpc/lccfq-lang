@@ -38,7 +38,23 @@ class PassContext:
 
 @dataclass(frozen=True)
 class PassRecord:
-    """Per-pass execution telemetry returned by PassManager.run()."""
+    """Per-pass execution telemetry returned by PassManager.run().
+
+    .. note:: **Perf #1 depth semantics**
+
+        ``cost_before.depth`` and ``cost_after.depth`` are ``None`` for:
+
+        - every record produced inside a fixpoint group's inner pass-sweep, and
+        - every non-boundary record in a multi-pass linear group (i.e. the
+          post-cost of a non-last pass and the pre-cost of a non-first pass).
+
+        ``None`` means "not measured via the DAG path" — it does **not** mean
+        the program is empty (that would be ``depth=0``).
+
+        For group-level depth telemetry with real integer depth values, consult
+        ``groups[i].cost_before / cost_after`` in ``Circuit.opt_report``, which
+        are populated from full ``Cost.measure`` calls at group boundaries.
+    """
     pass_name: str
     group_name: str
     iteration: int
