@@ -36,14 +36,16 @@ _SQISWAP = np.array([
 
 
 def _apply_one_qubit(state: np.ndarray, q: int, n: int, u: np.ndarray) -> np.ndarray:
-    new = np.zeros_like(state)
-    for idx in range(1 << n):
-        bit = (idx >> q) & 1
-        partner = idx ^ (1 << q)
-        if bit == 0:
-            new[idx] += u[0, 0] * state[idx] + u[0, 1] * state[partner]
-        else:
-            new[idx] += u[1, 0] * state[partner] + u[1, 1] * state[idx]
+    # Perf #8: vectorized via numpy fancy indexing.
+    mask = 1 << q
+    indices = np.arange(1 << n)
+    zero_idx = indices[(indices & mask) == 0]
+    one_idx = zero_idx | mask
+    a = state[zero_idx]
+    b = state[one_idx]
+    new = state.copy()
+    new[zero_idx] = u[0, 0] * a + u[0, 1] * b
+    new[one_idx] = u[1, 0] * a + u[1, 1] * b
     return new
 
 
@@ -56,25 +58,40 @@ def _apply_two_qubit_symmetric(
 ) -> np.ndarray:
     """Apply a 4x4 unitary to qubits (a, b). Assumes the matrix is
     represented in the LOW-qubit-first basis: row index r is
-    interpreted as r = (bit_b << 1) | bit_a."""
+    interpreted as r = (bit_b << 1) | bit_a.
+
+    Perf #8: vectorized. Partition the 2^n index space into 4 groups by
+    (bit_b, bit_a). Each group's indices for a given local value form a
+    contiguous slice in basis-state-space; apply the 4x4 matrix as four
+    inner-product accumulations over the four (anchor, partner-quadruple)
+    sets.
+    """
     if a == b:
         raise ValueError("_apply_two_qubit_symmetric: a == b")
-    # For each computational basis index, compute the 2-bit local
-    # index, look up the partners, accumulate.
+    mask_a = 1 << a
+    mask_b = 1 << b
+    indices = np.arange(1 << n)
+    bit_a = (indices & mask_a) != 0
+    bit_b = (indices & mask_b) != 0
+
+    # Four index groups partitioned by local 2-bit value (bit_b<<1 | bit_a).
+    # Each group has 2^(n-2) indices.
+    idx_local_0 = indices[(~bit_a) & (~bit_b)]   # local = 00
+    idx_local_1 = idx_local_0 | mask_a            # local = 01
+    idx_local_2 = idx_local_0 | mask_b            # local = 10
+    idx_local_3 = idx_local_0 | mask_a | mask_b   # local = 11
+    locals_idx = [idx_local_0, idx_local_1, idx_local_2, idx_local_3]
+
+    # Source amplitudes (one array per local input value).
+    src = [state[i] for i in locals_idx]
+
     new = np.zeros_like(state)
-    for idx in range(1 << n):
-        bit_a = (idx >> a) & 1
-        bit_b = (idx >> b) & 1
-        local = (bit_b << 1) | bit_a   # in {0,1,2,3}
-        for new_local in range(4):
-            new_bit_a = new_local & 1
-            new_bit_b = (new_local >> 1) & 1
-            target_idx = idx
-            if new_bit_a != bit_a:
-                target_idx ^= (1 << a)
-            if new_bit_b != bit_b:
-                target_idx ^= (1 << b)
-            new[target_idx] += u4[new_local, local] * state[idx]
+    for new_local in range(4):
+        # new[locals_idx[new_local]] = sum_{old_local} u4[new_local, old_local] * src[old_local]
+        accum = np.zeros_like(src[0])
+        for old_local in range(4):
+            accum = accum + u4[new_local, old_local] * src[old_local]
+        new[locals_idx[new_local]] = accum
     return new
 
 

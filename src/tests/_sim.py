@@ -41,42 +41,52 @@ def _u_rz(theta):
 
 
 def _apply_one_qubit(state, q, n, u):
-    new = np.zeros_like(state)
-    for idx in range(1 << n):
-        bit = (idx >> q) & 1
-        partner = idx ^ (1 << q)
-        if bit == 0:
-            new[idx] += u[0, 0] * state[idx] + u[0, 1] * state[partner]
-        else:
-            new[idx] += u[1, 0] * state[partner] + u[1, 1] * state[idx]
+    # Perf #8: vectorized via numpy fancy indexing. For each pair of
+    # indices (zero-bit-at-q, one-bit-at-q), apply the 2x2 unitary.
+    mask = 1 << q
+    indices = np.arange(1 << n)
+    zero_idx = indices[(indices & mask) == 0]
+    one_idx = zero_idx | mask
+    a = state[zero_idx]
+    b = state[one_idx]
+    new = state.copy()
+    new[zero_idx] = u[0, 0] * a + u[0, 1] * b
+    new[one_idx] = u[1, 0] * a + u[1, 1] * b
     return new
 
 
 def _apply_multi_ctrl(state, controls, target, n, u):
-    mask = 0
+    # Perf #8: vectorized. Only indices where all control bits are 1 AND
+    # the target bit is 0 are "anchor" indices; the partner is the same
+    # index with the target bit flipped. Apply the 2x2 unitary to each
+    # (anchor, partner) pair.
+    ctrl_mask = 0
     for c in controls:
-        mask |= 1 << c
+        ctrl_mask |= 1 << c
+    tgt_mask = 1 << target
+    indices = np.arange(1 << n)
+    active_zero = (
+        ((indices & ctrl_mask) == ctrl_mask) & ((indices & tgt_mask) == 0)
+    )
+    zero_idx = indices[active_zero]
+    one_idx = zero_idx | tgt_mask
+    a = state[zero_idx]
+    b = state[one_idx]
     new = state.copy()
-    for idx in range(1 << n):
-        if (idx & mask) != mask:
-            continue
-        bit = (idx >> target) & 1
-        partner = idx ^ (1 << target)
-        if bit == 0:
-            new[idx] = u[0, 0] * state[idx] + u[0, 1] * state[partner]
-        else:
-            new[idx] = u[1, 0] * state[partner] + u[1, 1] * state[idx]
+    new[zero_idx] = u[0, 0] * a + u[0, 1] * b
+    new[one_idx] = u[1, 0] * a + u[1, 1] * b
     return new
 
 
 def _apply_swap(state, a, b, n):
-    new = np.zeros_like(state)
-    for idx in range(1 << n):
-        if ((idx >> a) & 1) == ((idx >> b) & 1):
-            new[idx] = state[idx]
-        else:
-            new[idx] = state[idx ^ ((1 << a) | (1 << b))]
-    return new
+    # Perf #8: vectorized. For indices where bit-a != bit-b, take amplitude
+    # from the partner (a/b bits flipped); otherwise unchanged.
+    indices = np.arange(1 << n)
+    bit_a = (indices >> a) & 1
+    bit_b = (indices >> b) & 1
+    swap_mask = (1 << a) | (1 << b)
+    different = bit_a != bit_b
+    return np.where(different, state[indices ^ swap_mask], state)
 
 
 def simulate(instructions, n: int, initial: np.ndarray = None) -> np.ndarray:
