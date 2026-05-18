@@ -13,6 +13,10 @@ Description:
         MergeAdjacent1Q     — merge adjacent same-symbol rotations on same qubit
         EulerXYRecompose    — collapse runs of >= 4 rotations into Ry-Rx-Ry form
 
+    Perf #7 (2026-05-18): MergeAdjacent1Q now uses per-qubit doubly-linked-list
+    survivor nodes (_SurvivorNode from _survivor_chain.py) for O(1) previous-op
+    lookup, replacing the former O(n) backward-scan module-level _previous_op_on.
+
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
@@ -26,22 +30,7 @@ from lccfq_lang.opt.pass_base import Pass, PassContext
 from lccfq_lang.opt.op_view import OpView
 from ._arith import MOD_2PI, is_zero_angle, ANGLE_TOL
 from ._native import NATIVE_1Q_PARAM
-
-
-# ---------------------------------------------------------------------------
-# Module-level helpers
-# ---------------------------------------------------------------------------
-
-def _previous_op_on(q: int, survivors: list, before: int) -> int:
-    """Walk backwards from before-1 to 0, return index of first op that
-    touches qubit q (skipping None holes), or -1 if none found."""
-    for i in range(before - 1, -1, -1):
-        op = survivors[i]
-        if op is None:
-            continue
-        if q in OpView(op).qubits:
-            return i
-    return -1
+from ._survivor_chain import _SurvivorNode, append_node, cancel_node
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +131,10 @@ class MergeAdjacent1Q(Pass):
     rx(a) rx(b) -> rx(a+b); same for ry. Drops the result entirely
     when (a+b) ~ 0 (mod 2pi). Does NOT mix axes (rx and ry on the
     same qubit are NOT merged here; see EulerXYRecompose).
+
+    Perf #7: uses per-qubit doubly-linked-list (_SurvivorNode) for O(1)
+    previous-op-on-qubit lookup.  Replace-in-place preserves the node's
+    qubit footprint so chains remain valid.
     """
     name = "merge_adjacent_1q"
     applies_to = "mach"
@@ -150,14 +143,14 @@ class MergeAdjacent1Q(Pass):
         self._isa = isa
 
     def run(self, program, ctx):
-        survivors: list = []
-        last_op: dict[int, int] = {}
+        survivors: list[_SurvivorNode] = []
+        last_node_on_q: dict[int, _SurvivorNode] = {}
         changed = False
 
         for op in program:
             qs = OpView(op).qubits
             if not qs:
-                survivors.append(op)
+                append_node(survivors, last_node_on_q, op)
                 continue
 
             mergeable = (
@@ -169,12 +162,11 @@ class MergeAdjacent1Q(Pass):
             )
             if mergeable:
                 q = qs[0]
-                prev_idx = last_op.get(q, -1)
-                if prev_idx >= 0:
-                    prev = survivors[prev_idx]
+                prev_node = last_node_on_q.get(q)
+                if prev_node is not None:
+                    prev = prev_node.op
                     if (
-                        prev is not None
-                        and isinstance(prev, Gate)
+                        isinstance(prev, Gate)
                         and prev.symbol == op.symbol
                         and set(OpView(prev).qubits) == {q}
                         and prev.params is not None
@@ -182,31 +174,29 @@ class MergeAdjacent1Q(Pass):
                     ):
                         merged_angle = MOD_2PI(prev.params[0] + op.params[0])
                         if is_zero_angle(merged_angle):
-                            survivors[prev_idx] = None
+                            # Drop both: cancel prev_node, skip op.
+                            cancel_node(prev_node, last_node_on_q)
                             changed = True
-                            new_last = _previous_op_on(q, survivors, prev_idx)
-                            if new_last < 0:
-                                last_op.pop(q, None)
-                            else:
-                                last_op[q] = new_last
                             continue
+                        # Replace prev in-place with merged gate.
+                        # Invariant: target_qubits unchanged (same single qubit q).
                         merged = Gate(
                             symbol=op.symbol,
                             target_qubits=list(prev.target_qubits),
                             control_qubits=prev.control_qubits,
                             params=[merged_angle],
                         )
-                        survivors[prev_idx] = merged
-                        last_op[q] = prev_idx
+                        assert OpView(merged).qubits == OpView(prev_node.op).qubits, (
+                            "replace-in-place changed qubit footprint"
+                        )
+                        prev_node.op = merged
+                        # last_node_on_q[q] still points to prev_node — correct.
                         changed = True
                         continue
 
-            survivors.append(op)
-            new_idx = len(survivors) - 1
-            for q in qs:
-                last_op[q] = new_idx
+            append_node(survivors, last_node_on_q, op)
 
-        return [s for s in survivors if s is not None], changed
+        return [node.op for node in survivors if node.alive], changed
 
 
 # ---------------------------------------------------------------------------

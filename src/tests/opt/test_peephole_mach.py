@@ -365,3 +365,23 @@ def test_euler_recompose_semantic_6_gate_run():
     out, _ = EulerXYRecompose(_StubISA()).run(p, _ctx())
     assert len(out) <= 3
     assert_equivalent_native(p, out, n_qubits=1)
+
+
+# ===========================================================================
+# Perf #7 linked-list regression test — long same-qubit chain (MergeAdjacent1Q)
+# ===========================================================================
+
+def test_merge_adjacent_1q_long_same_qubit_chain():
+    """32 rx(pi/16) on q=0 whose angles sum to 2*pi (zero mod 2*pi) — drop all.
+
+    Exercises the replace-in-place and final-drop paths of the linked-list
+    MergeAdjacent1Q implementation across a long chain of cancellations on the
+    same qubit.
+    """
+    import math
+    n = 32
+    angle = (2 * math.pi) / n
+    program = [Gate("rx", [0], None, [angle]) for _ in range(n)]
+    out, changed = MergeAdjacent1Q(_StubISA()).run(program, _ctx())
+    assert out == [], f"Expected empty result, got {len(out)} ops"
+    assert changed is True

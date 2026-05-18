@@ -393,3 +393,75 @@ class TestCommuteThroughControl:
         ]
         p_out, _ = self.pass_.run(p_in, ctx)
         assert_equivalent(p_in, p_out, 2)
+
+
+# ===========================================================================
+# Perf #7 linked-list regression tests — long same-qubit chains
+# ===========================================================================
+
+class TestCancelInversesLongChain:
+    """16 pairs of h h on q=0 — all cancel, result must be empty.
+
+    Exercises the per-qubit linked-list cancel path through many iterations
+    on the same qubit, verifying O(1) splice correctness throughout.
+    """
+
+    def setup_method(self):
+        self.pass_ = CancelInverses(isa)
+
+    def test_cancel_inverses_long_same_qubit_chain(self):
+        # 16 pairs of (h, h): should cancel entirely to [].
+        n_pairs = 16
+        program = []
+        for _ in range(n_pairs):
+            program.append(isa.h(tg=0))
+            program.append(isa.h(tg=0))
+        result, changed = self.pass_.run(program, ctx)
+        assert result == [], f"Expected empty result, got {len(result)} ops"
+        assert changed is True
+
+
+class TestMergeRotationsLongChain:
+    """32 rz rotations on q=0 whose angles sum to 0 (mod 2*pi) — should drop all.
+
+    Exercises the replace-in-place and final-drop paths of the linked-list
+    MergeRotations implementation across a long chain.
+    """
+
+    def setup_method(self):
+        self.pass_ = MergeRotations(isa)
+
+    def test_merge_rotations_long_same_qubit_chain(self):
+        import math
+        # 32 rz(pi/16) each; sum = 32 * pi/16 = 2*pi => zero after MOD_2PI.
+        n = 32
+        angle = (2 * math.pi) / n
+        program = [isa.rz(tg=0, params=[angle]) for _ in range(n)]
+        result, changed = self.pass_.run(program, ctx)
+        assert result == [], f"Expected empty result, got {len(result)} ops"
+        assert changed is True
+
+
+class TestFuseEulerZYZLongChain:
+    """8 consecutive (rz, ry, rz) triplets on q=0, each collapsing to identity.
+
+    Each triplet is rz(alpha) ry(0) rz(-alpha) = identity.  The chain
+    exercises both the pp_node and p_node cancel path repeatedly, stressing
+    the prev_per_qubit pointer updates after each triple drop.
+    """
+
+    def setup_method(self):
+        self.pass_ = FuseEulerZYZ(isa)
+
+    def test_fuse_euler_zyz_chained_triplets(self):
+        import math
+        # 8 identity triplets: rz(0.5) ry(0) rz(-0.5) each.
+        n_triplets = 8
+        program = []
+        for _ in range(n_triplets):
+            program.append(isa.rz(tg=0, params=[0.5]))
+            program.append(isa.ry(tg=0, params=[0.0]))
+            program.append(isa.rz(tg=0, params=[-0.5]))
+        result, changed = self.pass_.run(program, ctx)
+        assert result == [], f"Expected empty result, got {len(result)} ops"
+        assert changed is True

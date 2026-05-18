@@ -7,6 +7,11 @@ Description:
     Peephole optimization passes for the arch-level IR. All five passes
     operate on List[Instruction] and are pure (never mutate inputs).
 
+    Perf #7 (2026-05-18): CancelInverses, MergeRotations, and FuseEulerZYZ
+    now use per-qubit doubly-linked-list survivor nodes (_SurvivorNode from
+    _survivor_chain.py) for O(1) "previous op on qubit q" lookup, replacing
+    the former O(n) backward-scan _previous_op_on helpers.
+
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
@@ -23,6 +28,7 @@ from ._arith import (
     MOD_2PI,
     is_zero_angle,
 )
+from ._survivor_chain import _SurvivorNode, append_node, cancel_node
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +97,12 @@ class RemoveIdentity(Pass):
 
 class CancelInverses(Pass):
     """Cancels adjacent self-inverse pairs and adjacent inverse-symbol pairs
-    on the same qubits in the same role."""
+    on the same qubits in the same role.
+
+    Perf #7: uses per-qubit doubly-linked-list (_SurvivorNode) for O(1)
+    previous-op-on-qubit lookup.  last_node_on_q[q] always points to the
+    most-recent surviving node that touches qubit q.
+    """
 
     name = "cancel_inverses"
     applies_to = "arch"
@@ -100,44 +111,35 @@ class CancelInverses(Pass):
         self._isa = isa
 
     def run(self, program: List[Instruction], ctx: PassContext):
-        # `survivors` is a list of (idx, instr) where idx is the position
-        # in the *output* list. last_op[q] holds the index in `survivors`
-        # of the most recent surviving op touching qubit q, or -1.
-        survivors: List[Instruction] = []
-        last_op: dict[int, int] = {}
+        survivors: list[_SurvivorNode] = []
+        last_node_on_q: dict[int, _SurvivorNode] = {}
         changed = False
 
         for instr in program:
             qs = OpView(instr).qubits
             if not qs:
                 # Op without qubit footprint (e.g. ftol). Cannot cancel, append.
-                survivors.append(instr)
+                # Does NOT enter any per-qubit chain (append_node skips empty qs).
+                append_node(survivors, last_node_on_q, instr)
                 continue
 
-            # Find the previous op (must be the SAME op on every qubit in qs).
-            prev_idx = last_op.get(qs[0], -1)
-            if prev_idx >= 0 and all(last_op.get(q, -2) == prev_idx for q in qs):
-                prev = survivors[prev_idx]
-                if prev is not None and self._cancels(prev, instr):
-                    # Remove prev. Mark its slot as a hole.
-                    survivors[prev_idx] = None  # type: ignore[assignment]
-                    changed = True
-                    # Update last_op: scan back from prev_idx for each qubit in qs.
-                    for q in OpView(prev).qubits:
-                        new_last = self._previous_op_on(q, survivors, prev_idx)
-                        if new_last < 0:
-                            last_op.pop(q, None)
-                        else:
-                            last_op[q] = new_last
-                    continue  # skip appending instr too
+            # Find the previous op: must be the SAME node on every qubit in qs.
+            prev_node = last_node_on_q.get(qs[0])
+            if (
+                prev_node is not None
+                and all(last_node_on_q.get(q) is prev_node for q in qs)
+                and self._cancels(prev_node.op, instr)
+            ):
+                # Cancel: mark dead and splice out of all per-qubit chains.
+                cancel_node(prev_node, last_node_on_q)
+                changed = True
+                # Do NOT append instr — both ops vanish.
+                continue
 
-            # No cancellation: register instr as the new last_op for all its qubits.
-            survivors.append(instr)
-            new_idx = len(survivors) - 1
-            for q in qs:
-                last_op[q] = new_idx
+            # No cancellation: append instr as a new surviving node.
+            append_node(survivors, last_node_on_q, instr)
 
-        return [s for s in survivors if s is not None], changed
+        return [node.op for node in survivors if node.alive], changed
 
     @staticmethod
     def _cancels(a: Instruction, b: Instruction) -> bool:
@@ -152,18 +154,6 @@ class CancelInverses(Pass):
             return _same_role(a, b)
         return False
 
-    @staticmethod
-    def _previous_op_on(q: int, survivors: list, before: int) -> int:
-        """Walk backwards from before-1 to 0, return index of first op
-        that touches q (skipping holes), or -1."""
-        for i in range(before - 1, -1, -1):
-            op = survivors[i]
-            if op is None:
-                continue
-            if q in OpView(op).qubits:
-                return i
-        return -1
-
 
 # ---------------------------------------------------------------------------
 # MergeRotations
@@ -171,7 +161,12 @@ class CancelInverses(Pass):
 
 class MergeRotations(Pass):
     """Merges adjacent same-axis rotations on the same qubit:
-    R(a) R(b) -> R(a+b). Drops the result entirely if a+b ~ 0 (mod 2*pi)."""
+    R(a) R(b) -> R(a+b). Drops the result entirely if a+b ~ 0 (mod 2*pi).
+
+    Perf #7: uses per-qubit doubly-linked-list for O(1) previous-op lookup.
+    Replace-in-place (node.op reassignment) preserves the node's qubit
+    footprint so chains remain valid.
+    """
 
     name = "merge_rotations"
     applies_to = "arch"
@@ -180,14 +175,14 @@ class MergeRotations(Pass):
         self._isa = isa
 
     def run(self, program: List[Instruction], ctx: PassContext):
-        survivors: List[Instruction] = []
-        last_op: dict[int, int] = {}
+        survivors: list[_SurvivorNode] = []
+        last_node_on_q: dict[int, _SurvivorNode] = {}
         changed = False
 
         for instr in program:
             qs = OpView(instr).qubits
             if not qs:
-                survivors.append(instr)
+                append_node(survivors, last_node_on_q, instr)
                 continue
 
             # Mergeable only if single qubit and a known additive rotation.
@@ -198,55 +193,41 @@ class MergeRotations(Pass):
                 and len(instr.params) == 1
             ):
                 q = qs[0]
-                prev_idx = last_op.get(q, -1)
-                if prev_idx >= 0:
-                    prev = survivors[prev_idx]
-                    if prev is not None:
-                        pv = OpView(prev)
-                        if (
-                            prev.symbol == instr.symbol
-                            and set(pv.qubits) == {q}
-                            and prev.params is not None
-                            and len(prev.params) == 1
-                        ):
-                            merged_angle = MOD_2PI(prev.params[0] + instr.params[0])
-                            if is_zero_angle(merged_angle):
-                                # Drop both.
-                                survivors[prev_idx] = None  # type: ignore[assignment]
-                                changed = True
-                                new_last = self._previous_op_on(q, survivors, prev_idx)
-                                if new_last < 0:
-                                    last_op.pop(q, None)
-                                else:
-                                    last_op[q] = new_last
-                                continue
-                            # Replace prev with merged rotation built via ISA.
-                            merged = self._build_rotation(instr.symbol, q, merged_angle)
-                            survivors[prev_idx] = merged
-                            last_op[q] = prev_idx
+                prev_node = last_node_on_q.get(q)
+
+                if prev_node is not None:
+                    prev = prev_node.op
+                    pv = OpView(prev)
+                    if (
+                        prev.symbol == instr.symbol
+                        and set(pv.qubits) == {q}
+                        and prev.params is not None
+                        and len(prev.params) == 1
+                    ):
+                        merged_angle = MOD_2PI(prev.params[0] + instr.params[0])
+                        if is_zero_angle(merged_angle):
+                            # Drop both: cancel the prev node, skip instr.
+                            cancel_node(prev_node, last_node_on_q)
                             changed = True
                             continue
+                        # Replace prev with merged rotation (replace-in-place).
+                        # Invariant: qubit footprint unchanged — same single qubit q.
+                        merged = self._build_rotation(instr.symbol, q, merged_angle)
+                        assert OpView(merged).qubits == OpView(prev_node.op).qubits, (
+                            "replace-in-place changed qubit footprint"
+                        )
+                        prev_node.op = merged
+                        # last_node_on_q[q] still points to prev_node — correct.
+                        changed = True
+                        continue
 
-            survivors.append(instr)
-            new_idx = len(survivors) - 1
-            for q in qs:
-                last_op[q] = new_idx
+            append_node(survivors, last_node_on_q, instr)
 
-        return [s for s in survivors if s is not None], changed
+        return [node.op for node in survivors if node.alive], changed
 
     def _build_rotation(self, sym: str, q: int, angle: float) -> Instruction:
         method = getattr(self._isa, sym)
         return method(tg=q, params=[angle])
-
-    @staticmethod
-    def _previous_op_on(q: int, survivors: list, before: int) -> int:
-        for i in range(before - 1, -1, -1):
-            op = survivors[i]
-            if op is None:
-                continue
-            if q in OpView(op).qubits:
-                return i
-        return -1
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +236,12 @@ class MergeRotations(Pass):
 
 class FuseEulerZYZ(Pass):
     """Detects rz-ry-rz triplets on the same qubit and either eliminates them
-    (if equivalent to identity) or normalises their angles into (-pi, pi]."""
+    (if equivalent to identity) or normalises their angles into (-pi, pi].
+
+    Perf #7: last1[q] / last2[q] are now derived on demand from
+    last_node_on_q[q] and its prev_per_qubit[q] pointer, each an O(1) read.
+    The two formerly chained _previous_op_on calls (O(n) each) are gone.
+    """
 
     name = "fuse_euler_zyz"
     applies_to = "arch"
@@ -264,15 +250,8 @@ class FuseEulerZYZ(Pass):
         self._isa = isa
 
     def run(self, program: List[Instruction], ctx: PassContext):
-        # Build per-qubit ordered lists of indices, then sweep.
-        # For simplicity, do a single forward pass tracking the last
-        # *two* surviving ops per qubit.
-        survivors: List[Instruction] = []
-        # last1[q] = most recent surviving idx touching q
-        # last2[q] = second-most recent surviving idx touching q,
-        #           but only if no other op touched q between last2 and last1.
-        last1: dict[int, int] = {}
-        last2: dict[int, int] = {}
+        survivors: list[_SurvivorNode] = []
+        last_node_on_q: dict[int, _SurvivorNode] = {}
         changed = False
 
         for instr in program:
@@ -284,14 +263,16 @@ class FuseEulerZYZ(Pass):
                 and len(instr.params) == 1
             ):
                 q = qs[0]
-                p_idx = last1.get(q, -1)
-                pp_idx = last2.get(q, -1)
-                if p_idx >= 0 and pp_idx >= 0:
-                    p = survivors[p_idx]
-                    pp = survivors[pp_idx]
+                # O(1) reads: most-recent and second-most-recent nodes on q.
+                p_node = last_node_on_q.get(q)
+                pp_node = p_node.prev_per_qubit.get(q) if p_node is not None else None
+
+                if p_node is not None and pp_node is not None:
+                    p = p_node.op
+                    pp = pp_node.op
+
                     if (
-                        pp is not None and p is not None
-                        and pp.symbol == "rz" and p.symbol == "ry"
+                        pp.symbol == "rz" and p.symbol == "ry"
                         and OpView(pp).qubits == (q,) and OpView(p).qubits == (q,)
                         and pp.params is not None and p.params is not None
                         and len(pp.params) == 1 and len(p.params) == 1
@@ -300,51 +281,35 @@ class FuseEulerZYZ(Pass):
                         beta = p.params[0]
                         gamma = instr.params[0]
                         if is_zero_angle(beta) and is_zero_angle(alpha + gamma):
-                            # Drop pp, p, and instr entirely.
-                            survivors[pp_idx] = None
-                            survivors[p_idx] = None
+                            # Drop pp_node and p_node; skip instr entirely.
+                            # Cancel pp_node first (deeper in the chain).
+                            cancel_node(pp_node, last_node_on_q)
+                            # After removing pp_node, p_node is now head on q
+                            # (last_node_on_q[q] == p_node after the first cancel).
+                            cancel_node(p_node, last_node_on_q)
                             changed = True
-                            new_last = self._previous_op_on(q, survivors, pp_idx)
-                            if new_last < 0:
-                                last1.pop(q, None)
-                                last2.pop(q, None)
-                            else:
-                                last1[q] = new_last
-                                new_last2 = self._previous_op_on(q, survivors, new_last)
-                                if new_last2 < 0:
-                                    last2.pop(q, None)
-                                else:
-                                    last2[q] = new_last2
                             continue
-                        # Normalise: replace pp, p; append normalised instr.
-                        survivors[pp_idx] = self._isa.rz(tg=q, params=[MOD_2PI(alpha)])
-                        survivors[p_idx] = self._isa.ry(tg=q, params=[MOD_2PI(beta)])
+                        # Normalise: replace pp and p in-place; append normalised instr.
+                        norm_pp = self._isa.rz(tg=q, params=[MOD_2PI(alpha)])
+                        norm_p = self._isa.ry(tg=q, params=[MOD_2PI(beta)])
+                        assert OpView(norm_pp).qubits == OpView(pp_node.op).qubits, (
+                            "replace-in-place changed qubit footprint (pp)"
+                        )
+                        assert OpView(norm_p).qubits == OpView(p_node.op).qubits, (
+                            "replace-in-place changed qubit footprint (p)"
+                        )
+                        pp_node.op = norm_pp
+                        p_node.op = norm_p
+                        # Append normalised gamma as a new node.
                         normalised = self._isa.rz(tg=q, params=[MOD_2PI(gamma)])
-                        survivors.append(normalised)
-                        new_idx = len(survivors) - 1
-                        last2[q] = p_idx
-                        last1[q] = new_idx
+                        append_node(survivors, last_node_on_q, normalised)
                         changed = True
                         continue
 
-            survivors.append(instr)
-            new_idx = len(survivors) - 1
-            for q in qs:
-                if q in last1:
-                    last2[q] = last1[q]
-                last1[q] = new_idx
+            # Default: append as new surviving node.
+            append_node(survivors, last_node_on_q, instr)
 
-        return [s for s in survivors if s is not None], changed
-
-    @staticmethod
-    def _previous_op_on(q: int, survivors: list, before: int) -> int:
-        for i in range(before - 1, -1, -1):
-            op = survivors[i]
-            if op is None:
-                continue
-            if q in OpView(op).qubits:
-                return i
-        return -1
+        return [node.op for node in survivors if node.alive], changed
 
 
 # ---------------------------------------------------------------------------
