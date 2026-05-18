@@ -11,6 +11,7 @@ License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
 from __future__ import annotations
+import functools
 import math
 import networkx as nx
 from dataclasses import dataclass
@@ -194,8 +195,15 @@ class Cost:
         handling.  No callers of ``scalarize`` need to change.
 
         Does not mutate *weights*.
+
+        Perf #10: the no-weights (DEFAULT_WEIGHTS) path is the only
+        argument shape used by PassManager fixpoint-termination compares;
+        cache it via module-level lru_cache since Cost is a frozen dataclass
+        (hashable). Custom-weights path computes fresh.
         """
-        w = weights or DEFAULT_WEIGHTS
+        if weights is None:
+            return _scalarize_default(self)
+        w = weights
         score = (
             (w["depth"] * self.depth if self.depth is not None else 0.0)
             + w["count_1q"]      * self.count_1q
@@ -205,3 +213,18 @@ class Cost:
                if self.estimated_error is not None else 0.0)
         )
         return score
+
+
+@functools.lru_cache(maxsize=1024)
+def _scalarize_default(cost: "Cost") -> float:
+    """Cached default-weights scalarization. Module-level so it can be
+    decorated; Cost is frozen (hashable) so the cache key is well-defined."""
+    w = DEFAULT_WEIGHTS
+    return (
+        (w["depth"] * cost.depth if cost.depth is not None else 0.0)
+        + w["count_1q"]      * cost.count_1q
+        + w["count_2q"]      * cost.count_2q
+        + w["count_native_2q"] * cost.count_native_2q
+        + (w["error"] * (1.0 - cost.estimated_error)
+           if cost.estimated_error is not None else 0.0)
+    )
