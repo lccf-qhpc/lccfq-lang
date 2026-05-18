@@ -163,28 +163,36 @@ def _score_swap(
     """
     a, b = swap_pair
 
-    def gate_dist(instr: Instruction, layout: dict) -> float:
+    # Perf #6: compute hypothetical distances incrementally instead of
+    # materializing hypo = dict(current_layout) and inv = {v:k for k,v in hypo}
+    # per candidate. After SWAP(a, b), a virtual qubit's physical position
+    # changes only if its current physical is a or b (swapped) — otherwise
+    # unchanged. No O(N) dict allocation per candidate.
+    def _swap_phys(p: int) -> int:
+        if p == a:
+            return b
+        if p == b:
+            return a
+        return p
+
+    def gate_dist_after(instr: Instruction) -> float:
         pair = _two_qubit_qubits(instr)
         if pair is None:
             return 0
-        p0 = layout[pair[0]]
-        p1 = layout[pair[1]]
+        p0 = _swap_phys(current_layout[pair[0]])
+        p1 = _swap_phys(current_layout[pair[1]])
         return distances.get((p0, p1), math.inf)
 
-    # Build hypothetical layout after applying this SWAP.
-    # current_layout is phys->phys: swap the values at keys whose
-    # current values are a and b respectively.
-    hypo = dict(current_layout)
-    inv = {v: k for k, v in hypo.items()}
-    ka, kb = inv[a], inv[b]
-    hypo[ka], hypo[kb] = b, a
+    def gate_dist_before(instr: Instruction) -> float:
+        pair = _two_qubit_qubits(instr)
+        if pair is None:
+            return 0
+        return distances.get(
+            (current_layout[pair[0]], current_layout[pair[1]]), math.inf
+        )
 
-    delta_front = sum(
-        gate_dist(g, hypo) - gate_dist(g, current_layout) for g in front
-    )
-    delta_look = sum(
-        gate_dist(g, hypo) - gate_dist(g, current_layout) for g in lookahead
-    )
+    delta_front = sum(gate_dist_after(g) - gate_dist_before(g) for g in front)
+    delta_look = sum(gate_dist_after(g) - gate_dist_before(g) for g in lookahead)
     penalty = decay_weight * (decay.get(a, 0.0) + decay.get(b, 0.0))
     return delta_front + alpha * delta_look + penalty
 
@@ -241,7 +249,9 @@ class LookaheadSwapInsertion(Pass):
         swap_emitted = False  # Perf #4: track whether any SWAP was inserted.
 
         # Identity permutation: current_layout[p] = p for all physical qubits.
+        # Perf #6: maintain inverse incrementally to avoid O(N) rebuild on every SWAP.
         current_layout: dict = {p: p for p in topology.qubits()}
+        current_inv: dict = {p: p for p in topology.qubits()}
         decay: dict = {p: 0.0 for p in topology.qubits()}
 
         stall_iters = 0
@@ -340,10 +350,11 @@ class LookaheadSwapInsertion(Pass):
             swap_emitted = True
 
             # Update permutation: swap values at the keys that currently
-            # hold a and b.
-            inv = {v: k for k, v in current_layout.items()}
-            ka, kb = inv[a], inv[b]
+            # hold a and b. Perf #6: use the incrementally-maintained inverse
+            # (O(1) lookup) instead of rebuilding it (O(N) construction).
+            ka, kb = current_inv[a], current_inv[b]
             current_layout[ka], current_layout[kb] = b, a
+            current_inv[a], current_inv[b] = kb, ka
 
             decay[a] = decay.get(a, 0.0) + DECAY_WEIGHT
             decay[b] = decay.get(b, 0.0) + DECAY_WEIGHT
