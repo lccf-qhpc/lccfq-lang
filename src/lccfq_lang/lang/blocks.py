@@ -28,6 +28,7 @@ from .evolution import time_evolution, trotter_steps
 from .variational import hw_eff_ansatz, qaoa_step
 from .codes import syndrome
 from .templates import template
+from .multicontrol import mcx, mcz, mcry, mcrz
 
 
 class BlockType(Enum):
@@ -51,6 +52,10 @@ class BlockType(Enum):
     QAOA_STEP       = 18
     SYNDROME        = 19
     TEMPLATE        = 20
+    MCX             = 21
+    MCZ             = 22
+    MCRY            = 23
+    MCRZ            = 24
 
 
 class BlockFactory:
@@ -83,6 +88,10 @@ class BlockFactory:
             BlockType.QAOA_STEP:       qaoa_step,
             BlockType.SYNDROME:        syndrome,
             BlockType.TEMPLATE:        template,
+            BlockType.MCX:             mcx,
+            BlockType.MCZ:             mcz,
+            BlockType.MCRY:            mcry,
+            BlockType.MCRZ:            mcrz,
         }
 
     def block(self, b_type: BlockType, target, **kwargs) -> List[Instruction]:

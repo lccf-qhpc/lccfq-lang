@@ -1,0 +1,14 @@
+[qpu]
+name = "pfaff_v1"
+location = "Demo (5-qubit linear chain)"
+qubit_count = 5
+topology = "linear"
+qubits = [0, 1, 2, 3, 4]
+exclusions = []
+couplings = [
+    [0, 1], [1, 2], [2, 3], [3, 4],
+]
+
+[network]
+ip = "127.0.0.1"
+port = 5000

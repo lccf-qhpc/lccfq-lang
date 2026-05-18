@@ -1,16 +1,22 @@
 """Dense-vector simulator for the gate subset emitted by lang/* blocks.
 
-Test-only helper. Supports h, x, z, p, rx, ry, rz, cp, cz, cx, swap, plus
-multi-controlled x and z (constructed as Instructions with control_qubits
-of length > 1). Little-endian indexing: qubit 0 is the LSB of state-vector
-index.
+Test-only helper. Supports h, x, y, z, s, sdg, t, tdg, p, rx, ry, rz,
+cx, cy, cz, crx, cry, crz, cp, swap, plus multi-controlled x and z
+(Instructions with control_qubits of length > 1).
+Little-endian indexing: qubit 0 is the LSB of state-vector index.
 """
 import numpy as np
 
+_ISQRT2 = 1 / np.sqrt(2)
 
-H = (1 / np.sqrt(2)) * np.array([[1, 1], [1, -1]], dtype=complex)
+H = _ISQRT2 * np.array([[1, 1], [1, -1]], dtype=complex)
 X = np.array([[0, 1], [1, 0]], dtype=complex)
+Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
 Z = np.array([[1, 0], [0, -1]], dtype=complex)
+S = np.array([[1, 0], [0, 1j]], dtype=complex)
+SDG = np.array([[1, 0], [0, -1j]], dtype=complex)
+T = np.array([[1, 0], [0, (1 + 1j) * _ISQRT2]], dtype=complex)
+TDG = np.array([[1, 0], [0, (1 - 1j) * _ISQRT2]], dtype=complex)
 
 
 def _u_p(theta):
@@ -93,11 +99,21 @@ def simulate(instructions, n: int, initial: np.ndarray = None) -> np.ndarray:
                 state = _apply_multi_ctrl(state, cts, tgs[0], n, X)
             else:
                 state = _apply_one_qubit(state, tgs[0], n, X)
+        elif sym == "y":
+            state = _apply_one_qubit(state, tgs[0], n, Y)
         elif sym == "z":
             if inst.is_controlled and cts:
                 state = _apply_multi_ctrl(state, cts, tgs[0], n, Z)
             else:
                 state = _apply_one_qubit(state, tgs[0], n, Z)
+        elif sym == "s":
+            state = _apply_one_qubit(state, tgs[0], n, S)
+        elif sym == "sdg":
+            state = _apply_one_qubit(state, tgs[0], n, SDG)
+        elif sym == "t":
+            state = _apply_one_qubit(state, tgs[0], n, T)
+        elif sym == "tdg":
+            state = _apply_one_qubit(state, tgs[0], n, TDG)
         elif sym == "p":
             state = _apply_one_qubit(state, tgs[0], n, _u_p(ps[0]))
         elif sym == "rx":
@@ -113,8 +129,13 @@ def simulate(instructions, n: int, initial: np.ndarray = None) -> np.ndarray:
         elif sym == "cx":
             state = _apply_multi_ctrl(state, [cts[0]], tgs[0], n, X)
         elif sym == "cy":
-            Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
             state = _apply_multi_ctrl(state, [cts[0]], tgs[0], n, Y)
+        elif sym == "crx":
+            state = _apply_multi_ctrl(state, [cts[0]], tgs[0], n, _u_rx(ps[0]))
+        elif sym == "cry":
+            state = _apply_multi_ctrl(state, [cts[0]], tgs[0], n, _u_ry(ps[0]))
+        elif sym == "crz":
+            state = _apply_multi_ctrl(state, [cts[0]], tgs[0], n, _u_rz(ps[0]))
         elif sym == "swap":
             state = _apply_swap(state, cts[0], tgs[0], n)
         else:

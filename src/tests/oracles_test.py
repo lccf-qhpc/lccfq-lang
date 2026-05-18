@@ -9,6 +9,7 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
+import numpy as np
 import pytest
 from lccfq_lang.arch.isa import ISA
 from lccfq_lang.lang.oracles import oracle, phase_oracle
@@ -23,10 +24,11 @@ def symbols(instrs):
     return [i.symbol for i in instrs]
 
 
-def count_mcx(instrs, ancilla):
+def count_mcx_like(instrs, ancilla):
+    """Count controlled-X style gates targeting ancilla (cx or old-style x controlled)."""
     return sum(
         1 for i in instrs
-        if i.symbol == "x"
+        if i.symbol in ("x", "cx")
         and i.is_controlled
         and i.target_qubits == [ancilla]
     )
@@ -47,15 +49,14 @@ class TestOracleEmptyMarking:
 
 
 class TestOracleSingleInput:
-    """n=1: target has one qubit. Marking 0 surrounds the CX with X gates;
-    marking 1 leaves the CX bare."""
+    """n=1: target has one qubit. After refactor, the MCX at n=1 is a CX gate."""
 
     def test_mark_one(self, isa):
         result = oracle(isa, [0], ancilla=1, predicate=[1])
-        # Only the multi-controlled-X (single control here)
+        # Single controlled-X: isa.cx returns symbol="cx"
         assert len(result) == 1
         i = result[0]
-        assert i.symbol == "x"
+        assert i.symbol == "cx"
         assert i.is_controlled
         assert i.control_qubits == [0]
         assert i.target_qubits == [1]
@@ -70,62 +71,103 @@ class TestOracleSingleInput:
 
     def test_mark_both(self, isa):
         result = oracle(isa, [0], ancilla=1, predicate=[0, 1])
-        # Two patterns, total = 1 (mark 0: X-CX-X) + 1 (mark 1: CX) = 4 instructions
-        assert count_mcx(result, ancilla=1) == 2
+        # Two MCX gates targeting ancilla=1
+        assert count_mcx_like(result, ancilla=1) == 2
 
 
 class TestOracleTwoInputs:
-    def test_mark_value_3_emits_bare_mcx(self, isa):
-        # 3 = '11' → no surrounding X needed
+    """n=2: MCX with 2 controls now decomposes to Toffoli (15 instructions).
+    We keep semantic checks (is_controlled on the target) and verify the
+    decomposition is correct via simulator."""
+
+    def test_mark_value_3_emits_controlled_block(self, isa):
+        # 3 = '11' → no surrounding X needed; full Toffoli expansion to ancilla=2
         result = oracle(isa, [0, 1], ancilla=2, predicate=[3])
-        assert len(result) == 1
-        mcx = result[0]
-        assert mcx.is_controlled
-        assert mcx.control_qubits == [0, 1]
-        assert mcx.target_qubits == [2]
+        # Toffoli is 15 gates. Must be non-empty.
+        assert len(result) > 1
+        # All instructions must be 1q or 2q (no multi-control)
+        for inst in result:
+            assert inst.control_qubits is None or len(inst.control_qubits) <= 1
+
+    def test_mark_value_3_semantic(self, isa):
+        from tests._sim import simulate, basis_state
+        # |11>|0> -> |11>|1>
+        n = 3  # 2 inputs + 1 ancilla
+        result = oracle(isa, [0, 1], ancilla=2, predicate=[3])
+        # Apply to |110> (qubits: ancilla=q2=0, target[1]=q1=1, target[0]=q0=1)
+        # Little-endian: index = q0 + 2*q1 + 4*q2 = 1 + 2 + 0 = 3 = |011> in index
+        s_in = basis_state(3, n)   # q0=1, q1=1, q2=0 → index 3
+        s_out = simulate(result, n, initial=s_in)
+        # ancilla should flip: index = 1+2+4 = 7
+        assert np.allclose(s_out, basis_state(7, n), atol=1e-12)
 
     def test_mark_value_0_wraps_both_with_x(self, isa):
         # 0 = '00' → flip both input qubits before and after the MCX
         result = oracle(isa, [0, 1], ancilla=2, predicate=[0])
-        # Expected order: X q0, X q1, MCX q0,q1->q2, X q0, X q1
-        assert len(result) == 5
-        assert symbols(result) == ["x", "x", "x", "x", "x"]
-        # The middle one is the controlled one
-        assert result[2].is_controlled
-        assert result[2].control_qubits == [0, 1]
+        # Starts with 2 X gates, ends with 2 X gates, MCX in between (expanded)
+        assert result[0].symbol == "x" and not result[0].is_controlled
+        assert result[1].symbol == "x" and not result[1].is_controlled
+        assert result[-1].symbol == "x" and not result[-1].is_controlled
+        assert result[-2].symbol == "x" and not result[-2].is_controlled
+        # No multi-control instructions in the list
+        for inst in result:
+            assert inst.control_qubits is None or len(inst.control_qubits) <= 1
 
     def test_mark_value_1_wraps_only_high_bit(self, isa):
         # 1 = bit 0 set, bit 1 clear (little-endian default) → flip q1 only
         result = oracle(isa, [0, 1], ancilla=2, predicate=[1])
-        assert len(result) == 3
         assert result[0].symbol == "x" and result[0].target_qubits == [1]
-        assert result[1].is_controlled
-        assert result[2].symbol == "x" and result[2].target_qubits == [1]
+        assert result[-1].symbol == "x" and result[-1].target_qubits == [1]
+        # No multi-control instructions
+        for inst in result:
+            assert inst.control_qubits is None or len(inst.control_qubits) <= 1
 
     def test_bitstring_and_int_agree(self, isa):
-        # "01" reads MSB-first, so int = 0b01 = 1 → little-endian: bit-0=1, bit-1=0
-        # Same as predicate=[1]: should wrap q1 only.
-        result = oracle(isa, [0, 1], ancilla=2, predicate=["01"])
-        assert len(result) == 3
-        assert result[0].target_qubits == [1]
-        assert result[2].target_qubits == [1]
+        # "01" reads MSB-first, so int = 0b01 = 1
+        from tests._sim import simulate, basis_state
+        n = 3
+        result_str = oracle(isa, [0, 1], ancilla=2, predicate=["01"])
+        result_int = oracle(isa, [0, 1], ancilla=2, predicate=[1])
+        # Both should produce identical semantic results
+        for x in range(4):
+            s = basis_state(x, n)
+            out_str = simulate(result_str, n, initial=s)
+            out_int = simulate(result_int, n, initial=s)
+            assert np.allclose(out_str, out_int, atol=1e-12)
 
     def test_endianness_big_swaps_bit_meaning(self, isa):
         # "01" with big endianness: target[0] is MSB, so bit-0=0, bit-1=1
-        # The X-wrap should be on q0 (the bit that is 0).
-        result = oracle(isa, [0, 1], ancilla=2,
-                        predicate=["01"], endianness="big")
-        assert len(result) == 3
+        result = oracle(isa, [0, 1], ancilla=2, predicate=["01"],
+                        endianness="big")
+        # The X-wrap should be on q0 (the bit that is 0)
         assert result[0].target_qubits == [0]
-        assert result[2].target_qubits == [0]
+        assert result[-1].target_qubits == [0]
 
 
 class TestOracleThreeInputs:
-    def test_count_only_mcx(self, isa):
-        # 4 marked inputs → 4 MCX gates
+    def test_three_inputs_semantic(self, isa):
+        """n=3: verify oracle semantics via simulation rather than structure."""
+        from tests._sim import simulate, basis_state
+        n_in, n_anc = 3, 1
+        n = n_in + n_anc
+        marked = (0, 3, 5, 7)
+        result = oracle(isa, [0, 1, 2], ancilla=3,
+                        predicate=lambda x: x in marked)
+        # For each input |x>|0>, oracle should give |x>|f(x)>
+        for x in range(8):
+            s_init = basis_state(x, n)   # |x>|0>, ancilla at qubit 3 = 0
+            s_out = simulate(result, n, initial=s_init)
+            expected_idx = x | ((1 if x in marked else 0) << n_in)
+            expected = basis_state(expected_idx, n)
+            assert np.allclose(s_out, expected, atol=1e-12), \
+                f"Failed for x={x}: expected index {expected_idx}"
+
+    def test_no_multi_control_instructions(self, isa):
+        """All emitted instructions must have at most 1 control qubit."""
         result = oracle(isa, [0, 1, 2], ancilla=3,
                         predicate=lambda x: x in (0, 3, 5, 7))
-        assert count_mcx(result, ancilla=3) == 4
+        for inst in result:
+            assert inst.control_qubits is None or len(inst.control_qubits) <= 1
 
 
 class TestOracleValidation:
@@ -163,19 +205,6 @@ class TestOracleValidation:
 # phase_oracle — ancilla-free phase-kickback
 # ===========================================================================
 
-def find_mcz(instrs, n_targets):
-    """Return the MCZ-like instruction in instrs (n=1: Z; n=2: CZ;
-    n>=3: multi-controlled Z)."""
-    for i in instrs:
-        if i.symbol == "z" and (
-            (n_targets == 1 and not i.is_controlled)
-            or (n_targets >= 2 and i.is_controlled
-                and len(i.control_qubits) == n_targets - 1)
-        ):
-            return i
-    return None
-
-
 class TestPhaseOracleEmpty:
     def test_no_marked_inputs(self, isa):
         result = phase_oracle(isa, [0, 1], predicate=[])
@@ -198,11 +227,13 @@ class TestPhaseOracleSingleQubit:
 
 
 class TestPhaseOracleTwoQubits:
+    """n=2: MCZ at n=1 control now returns isa.cz() with symbol='cz'."""
+
     def test_mark_three_is_cz(self, isa):
         result = phase_oracle(isa, [0, 1], predicate=[3])
         assert len(result) == 1
         mcz = result[0]
-        assert mcz.symbol == "z"
+        assert mcz.symbol == "cz"
         assert mcz.is_controlled
         assert mcz.control_qubits == [0]
         assert mcz.target_qubits == [1]
@@ -211,7 +242,7 @@ class TestPhaseOracleTwoQubits:
         result = phase_oracle(isa, [0, 1], predicate=[0])
         # X q0; X q1; CZ q0->q1; X q0; X q1
         assert len(result) == 5
-        assert symbols(result) == ["x", "x", "z", "x", "x"]
+        assert symbols(result) == ["x", "x", "cz", "x", "x"]
         assert result[2].is_controlled
         assert result[2].control_qubits == [0]
         assert result[2].target_qubits == [1]
@@ -227,25 +258,37 @@ class TestPhaseOracleTwoQubits:
 
 
 class TestPhaseOracleThreeQubits:
-    def test_mcz_has_two_controls(self, isa):
-        result = phase_oracle(isa, [0, 1, 2], predicate=[7])
-        assert len(result) == 1
-        mcz = result[0]
-        assert mcz.symbol == "z"
-        assert mcz.is_controlled
-        assert mcz.control_qubits == [0, 1]
-        assert mcz.target_qubits == [2]
+    def test_three_qubits_semantic(self, isa):
+        """n=3: verify phase oracle semantics via simulation."""
+        from tests._sim import simulate, basis_state
+        n = 3
+        marked = (7,)
+        result = phase_oracle(isa, [0, 1, 2], predicate=lambda x: x in marked)
+        for x in range(1 << n):
+            s = simulate(result, n, initial=basis_state(x, n))
+            sign = -1.0 if x in marked else 1.0
+            assert np.allclose(s, sign * basis_state(x, n), atol=1e-12), \
+                f"Failed for x={x}"
 
-    def test_count_only_mcz(self, isa):
+    def test_count_only_mcz_semantic(self, isa):
+        """n=3 with multiple marked inputs: verify via simulation."""
+        from tests._sim import simulate, basis_state
+        n = 3
+        marked = (0, 3, 5, 7)
         result = phase_oracle(
-            isa, [0, 1, 2], predicate=lambda x: x in (0, 3, 5, 7)
+            isa, [0, 1, 2], predicate=lambda x: x in marked
         )
-        mczs = [i for i in result if i.symbol == "z"]
-        assert len(mczs) == 4
-        assert all(
-            i.is_controlled and i.control_qubits == [0, 1]
-            for i in mczs
-        )
+        for x in range(1 << n):
+            s = simulate(result, n, initial=basis_state(x, n))
+            sign = -1.0 if x in marked else 1.0
+            assert np.allclose(s, sign * basis_state(x, n), atol=1e-12), \
+                f"Failed for x={x}"
+
+    def test_no_multi_control_instructions(self, isa):
+        """All emitted instructions must have at most 1 control qubit."""
+        result = phase_oracle(isa, [0, 1, 2], predicate=[7])
+        for inst in result:
+            assert inst.control_qubits is None or len(inst.control_qubits) <= 1
 
 
 class TestPhaseOracleValidation:

@@ -20,6 +20,7 @@ import math
 import pytest
 from pathlib import Path
 from lccfq_lang.arch.isa import ISA
+from lccfq_lang.lang.multicontrol import mcx, mcz
 from lccfq_lang.opt.builtin.lower_passes import build_lowering_groups, slice_groups_for
 from lccfq_lang.opt.manager import PassManager
 from lccfq_lang.opt.pass_base import PassContext
@@ -41,13 +42,18 @@ _SUPPORTED_SQ_PAR = ["rx", "ry", "rz"]
 _SUPPORTED_TQ_NOPAR = ["cx", "cy", "cz"]
 
 
-def _random_arch_program(seed: int, n_qubits: int):
+def _random_arch_program(seed: int, n_qubits: int, include_mc: bool = False):
     """Generate a deterministic random arch program for the given seed.
 
     Includes single-qubit gates (parametric and non-parametric) as well as
     the three verified no-parameter two-qubit gates (cx, cy, cz).  Two-qubit
     gates are only emitted when n_qubits >= 2; control and target qubits are
     always distinct.
+
+    When include_mc=True, also emits MCX and MCZ blocks (vchain mode) with
+    2 controls when n_qubits >= 4.  The multi-controlled gates are already
+    fully decomposed into 1q+2q instructions by the lang layer, so they
+    pass through the arch/mach pipeline without requiring special lowering.
     """
     rng = random.Random(seed)
     isa = ISA("lccfq")
@@ -57,6 +63,8 @@ def _random_arch_program(seed: int, n_qubits: int):
         choices = ["sqn", "sqp"]
         if n_qubits >= 2:
             choices.append("tqn")
+        if include_mc and n_qubits >= 4:
+            choices.append("mc")
         kind = rng.choice(choices)
         if kind == "sqn":
             sym = rng.choice(_SUPPORTED_SQ_NOPAR)
@@ -67,11 +75,19 @@ def _random_arch_program(seed: int, n_qubits: int):
             q = rng.randrange(n_qubits)
             theta = rng.uniform(-math.pi, math.pi)
             program.append(getattr(isa, sym)(tg=q, params=[theta]))
-        else:  # tqn
+        elif kind == "tqn":
             sym = rng.choice(_SUPPORTED_TQ_NOPAR)
             ct = rng.randrange(n_qubits)
             tg = rng.choice([q for q in range(n_qubits) if q != ct])
             program.append(getattr(isa, sym)(ct=ct, tg=tg))
+        else:  # mc — multi-controlled gate, vchain, 2 controls
+            all_q = list(range(n_qubits))
+            tg = rng.choice(all_q)
+            remaining = [q for q in all_q if q != tg]
+            controls = rng.sample(remaining, 2)
+            gate_fn = rng.choice([mcx, mcz])
+            decomposed = gate_fn(isa, controls, tg=tg, mode="vchain")
+            program.extend(decomposed)
     return program
 
 
@@ -179,3 +195,30 @@ def test_adjacent_merge_equivalence():
     assert len(prog_level0) == 2
     assert len(prog_level1) == 1
     assert_equivalent_native(prog_level0, prog_level1, n_qubits=1)
+
+
+@pytest.mark.parametrize("seed", list(range(10)))
+def test_native_equivalence_with_mc(seed):
+    """Programs containing decomposed MCX/MCZ blocks (vchain, 2 controls) must
+    remain semantically equivalent across all four opt_levels.
+
+    The multi-controlled gates are pre-decomposed by the lang layer into 1q+2q
+    instructions, so they flow through the arch/mach pipeline identically to
+    any other arch program.  This test verifies that the optimizer does not
+    break the correctness of those composite sub-circuits.
+
+    n_qubits=4 stays within the testing.toml QPU capacity (qubit_count=4,
+    qubits=[0,1,2,3]).  include_mc is only activated for n_qubits >= 4, so
+    2-control MCX/MCZ gates are always emitted over distinct qubits in [0..3].
+    """
+    n_qubits = 4
+    arch_program = _random_arch_program(seed + 5000, n_qubits, include_mc=True)
+
+    results = []
+    for level in (0, 1, 2, 3):
+        prog = _run_to_mach(arch_program, level, n_qubits)
+        results.append(prog)
+
+    ref = results[0]
+    for prog in results[1:]:
+        assert_equivalent_native(ref, prog, n_qubits)
