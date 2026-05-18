@@ -17,9 +17,14 @@ from lccfq_lang.mach.ir import Gate, Control, Test
 
 
 class OpView:
-    """Uniform view over a single operation, regardless of IR level."""
+    """Uniform view over a single operation, regardless of IR level.
 
-    __slots__ = ("op", "_kind")
+    Perf #9: tuple-returning properties (targets, controls, qubits, params)
+    are computed lazily on first access and cached on the instance via
+    __slots__. Repeat reads cost one attribute fetch.
+    """
+
+    __slots__ = ("op", "_kind", "_targets", "_controls", "_qubits", "_params")
 
     def __init__(self, op: Any) -> None:
         self.op = op
@@ -33,6 +38,12 @@ class OpView:
             self._kind = "mach.test"
         else:
             raise TypeError(f"OpView: unsupported op type {type(op).__name__}")
+        # Sentinel: None means "not yet computed" (empty tuple () is a legal
+        # value for all four properties, so we cannot use it as a sentinel).
+        self._targets = None
+        self._controls = None
+        self._qubits = None
+        self._params = None
 
     @property
     def symbol(self) -> str:
@@ -40,23 +51,33 @@ class OpView:
 
     @property
     def targets(self) -> Tuple[int, ...]:
-        if self._kind in ("arch", "mach.gate"):
-            return tuple(self.op.target_qubits or ())
-        return ()
+        if self._targets is None:
+            self._targets = (
+                tuple(self.op.target_qubits or ())
+                if self._kind in ("arch", "mach.gate") else ()
+            )
+        return self._targets
 
     @property
     def controls(self) -> Tuple[int, ...]:
-        if self._kind in ("arch", "mach.gate"):
-            return tuple(self.op.control_qubits or ())
-        return ()
+        if self._controls is None:
+            self._controls = (
+                tuple(self.op.control_qubits or ())
+                if self._kind in ("arch", "mach.gate") else ()
+            )
+        return self._controls
 
     @property
     def params(self) -> Tuple[Any, ...]:
-        return tuple(self.op.params or ())
+        if self._params is None:
+            self._params = tuple(self.op.params or ())
+        return self._params
 
     @property
     def qubits(self) -> Tuple[int, ...]:
-        return tuple(self.controls) + tuple(self.targets)
+        if self._qubits is None:
+            self._qubits = self.controls + self.targets
+        return self._qubits
 
     @property
     def is_two_qubit(self) -> bool:
