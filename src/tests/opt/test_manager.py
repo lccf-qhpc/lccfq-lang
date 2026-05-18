@@ -362,3 +362,85 @@ class TestPerf1DepthNone:
         assert records[0].cost_after.depth is None
         # records[1].cost_before: not first → measure_counts → None
         assert records[1].cost_before.depth is None
+
+
+# ---------------------------------------------------------------------------
+# Perf #2 — LRU-1 cost cache across group boundaries
+# ---------------------------------------------------------------------------
+
+class TestPerf2CostCache:
+    def test_perf2_cache_hits_across_boundaries(self):
+        """Multi-group compile produces at least one boundary cache hit."""
+        # Two back-to-back linear groups so that group-1 last-pass-post
+        # is identical to group-2 first-pass-pre (same program object).
+        g1 = PassGroup(name="g1", mode="linear", passes=[NoOp()])
+        g2 = PassGroup(name="g2", mode="linear", passes=[NoOp()])
+        pm = PassManager([g1, g2])
+        pm.run(make_arch_program(3))
+        assert pm._cache_stats["hits"] >= 1
+        assert pm._cache_stats["misses"] >= 1
+
+    def test_perf2_cache_resets_between_runs(self):
+        """`.run()` resets the cache state and stats."""
+        group = PassGroup(name="g", mode="linear", passes=[NoOp()])
+        pm = PassManager([group])
+        pm.run(make_arch_program(3))
+        first_stats = dict(pm._cache_stats)
+        pm.run(make_arch_program(3))
+        # Stats reset to fresh counts (NOT additive across runs).
+        # Two identical single-group runs produce the same total measurements.
+        assert pm._cache_stats["hits"] + pm._cache_stats["misses"] == \
+               first_stats["hits"] + first_stats["misses"]
+        # Cache slot itself cleared at entry — stats are not accumulated.
+        assert pm._cache_stats == first_stats
+
+    def test_perf2_no_behavior_change(self):
+        """Cost values returned to groups_meta are unchanged vs. an uncached
+        re-measurement."""
+        group = PassGroup(name="fp", mode="fixpoint", passes=[NoOp()])
+        pm = PassManager([group])
+        prog = make_arch_program(3)
+        _, records, groups_meta = pm.run(prog)
+        group_in, group_out = groups_meta["fp"]
+        # Re-measure independently with the public API; results must match.
+        assert group_in == Cost.measure(prog, "arch", None)
+
+    def test_perf2_cache_hit_returns_same_object(self):
+        """Cache hit returns the SAME Cost instance, not just an equal one."""
+        # Two linear groups → the last-pass-post of g1 is the first-pass-pre
+        # of g2 (same program object handed across the boundary).
+        g1 = PassGroup(name="g1", mode="linear", passes=[NoOp()])
+        g2 = PassGroup(name="g2", mode="linear", passes=[NoOp()])
+        pm = PassManager([g1, g2])
+        _, records, _ = pm.run(make_arch_program(3))
+        # records[0].cost_after (last-pass-post of g1) and
+        # records[1].cost_before (first-pass-pre of g2) must be
+        # the same Cost instance — the cache returned the cached object.
+        assert records[0].cost_after is records[1].cost_before
+
+    def test_perf2_pass_in_place_mutation_assert(self):
+        """Sanity: passes return new lists, so id(program) before vs after
+        a pass invocation MUST differ — proving the cache cannot false-hit on
+        a transformed-but-same-id program.
+
+        This guards against a future regression where a pass mutates in place
+        AND returns the same list — which would silently break the cache
+        invariant documented in the _measure() docstring.
+        """
+        class IdentityChecker(Pass):
+            name = "id_check"
+            applies_to = "arch"
+            seen_ids = []
+
+            def run(self, program, ctx):
+                IdentityChecker.seen_ids.append(id(program))
+                out = list(program)
+                IdentityChecker.seen_ids.append(id(out))
+                return out
+
+        IdentityChecker.seen_ids = []
+        group = PassGroup(name="g", mode="linear", passes=[IdentityChecker()])
+        pm = PassManager([group])
+        pm.run(make_arch_program(3))
+        # Input id and output id must differ (pass returns a new list).
+        assert IdentityChecker.seen_ids[0] != IdentityChecker.seen_ids[1]

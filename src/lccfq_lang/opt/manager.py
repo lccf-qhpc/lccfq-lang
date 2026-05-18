@@ -52,6 +52,12 @@ class PassManager:
 
     def __init__(self, groups: List[PassGroup]) -> None:
         self.groups = groups
+        # Single-slot cost cache (Perf #2). Reset on every .run() entry.
+        # Key: (id(program), kind, id(qpu_config)); Value: Cost instance.
+        # Not thread-safe; one .run() at a time per instance.
+        self._last_cost_key: Optional[Tuple[int, str, int]] = None
+        self._last_cost_value: Optional[Cost] = None
+        self._cache_stats: Dict[str, int] = {"hits": 0, "misses": 0}
 
     def run(
         self,
@@ -85,6 +91,11 @@ class PassManager:
             2-tuple ``(program, records)``.  It now returns a 3-tuple.  The
             only in-tree caller (``arch/context.py``) has been updated.
         """
+        # Perf #2: reset per-run cost cache + stats.
+        self._last_cost_key = None
+        self._last_cost_value = None
+        self._cache_stats = {"hits": 0, "misses": 0}
+
         if ctx is None:
             ctx = PassContext()
         ctx.scratchpad = {}
@@ -142,16 +153,20 @@ class PassManager:
         for i, p in enumerate(group.passes):
             is_first = (i == 0)
             is_last = (i == n_passes - 1)
-            measure_pre = Cost.measure if is_first else Cost.measure_counts
-            cost_before = measure_pre(current, kind, ctx.qpu_config)
+            if is_first:
+                cost_before = self._measure(current, kind, ctx.qpu_config)
+            else:
+                cost_before = Cost.measure_counts(current, kind, ctx.qpu_config)
             t0 = time.perf_counter()
             if current:
                 new_program = p.run(current, ctx)
             else:
                 new_program = current
             delta = time.perf_counter() - t0
-            measure_post = Cost.measure if is_last else Cost.measure_counts
-            cost_after = measure_post(new_program, kind, ctx.qpu_config)
+            if is_last:
+                cost_after = self._measure(new_program, kind, ctx.qpu_config)
+            else:
+                cost_after = Cost.measure_counts(new_program, kind, ctx.qpu_config)
             records.append(PassRecord(
                 pass_name=p.name,
                 group_name=group.name,
@@ -188,7 +203,7 @@ class PassManager:
         """
         current = program
         # Full Cost for group boundary — both report accuracy and termination.
-        initial_group_cost_before = Cost.measure(current, kind, ctx.qpu_config)
+        initial_group_cost_before = self._measure(current, kind, ctx.qpu_config)
         group_cost_before = initial_group_cost_before
         # Initialise so the return value is always defined (handles max_iters=0
         # corner case, though PassGroup validation requires max_iters >= 1).
@@ -216,7 +231,7 @@ class PassManager:
                 current = new_program
 
             # Full Cost for termination and group-level report.
-            group_cost_after = Cost.measure(current, kind, ctx.qpu_config)
+            group_cost_after = self._measure(current, kind, ctx.qpu_config)
             final_group_cost_after = group_cost_after
             improvement = (
                 group_cost_before.scalarize() - group_cost_after.scalarize()
@@ -226,3 +241,36 @@ class PassManager:
             group_cost_before = group_cost_after
 
         return current, (initial_group_cost_before, final_group_cost_after)
+
+    def _measure(
+        self,
+        program: List[Any],
+        kind: str,
+        qpu_config: Optional[Any],
+    ) -> Cost:
+        """Cached full Cost.measure (Perf #2).
+
+        Single-slot cache keyed by ``(id(program), kind, id(qpu_config))``.
+        Cache lifetime: one call to :meth:`PassManager.run`.
+
+        The cache is safe from false hits because the ``current`` local variable
+        in :meth:`run` (and the inner ``current`` in :meth:`_run_linear` /
+        :meth:`_run_fixpoint`) holds a strong reference to the live program list
+        for the full duration of ``.run()``.  The program object whose ``id``
+        is stored in ``_last_cost_key`` is therefore guaranteed to be live at
+        the point of the next call — its ``id`` cannot have been reused by GC.
+
+        Not thread-safe; one ``.run()`` at a time per instance.
+
+        Stats are accumulated in :attr:`_cache_stats` (``"hits"`` / ``"misses"``)
+        for verification testing.
+        """
+        key = (id(program), kind, id(qpu_config))
+        if self._last_cost_key == key:
+            self._cache_stats["hits"] += 1
+            return self._last_cost_value
+        self._cache_stats["misses"] += 1
+        cost = Cost.measure(program, kind, qpu_config)
+        self._last_cost_key = key
+        self._last_cost_value = cost
+        return cost
