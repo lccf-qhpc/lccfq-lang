@@ -91,7 +91,7 @@ def test_report_true_populates_dict(qpu_mach):
     }
     assert rep["opt_level"] == 2
     assert rep["opt_passes"] is None
-    assert rep["routing_strategy"] in ("trivial", "sabre_lite", "identity")
+    assert rep["routing_strategy"] in ("trivial", "sabre_lite", "sabre_fast", "identity")
     assert rep["last_pass"] == "mach_optimized"
 
 

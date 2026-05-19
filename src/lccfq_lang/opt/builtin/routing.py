@@ -32,6 +32,10 @@ ALPHA: float = 0.5
 DECAY_WEIGHT: float = 0.001
 LOOKAHEAD_K: int = 20
 
+# Layout selection search constants (Perf #11).
+MAX_ROUNDS_DEFAULT: int = 50
+PATIENCE_DEFAULT: int = 10
+
 
 def _stall_cap(topology: QPUTopology) -> int:
     """Hard iteration cap for stall detection: 8 * number of qubits."""
@@ -56,6 +60,140 @@ def _two_qubit_qubits(instr: Instruction) -> Optional[tuple]:
     if len(qs) != 2:
         return None
     return (qs[0], qs[1])
+
+
+def _dedup_unique_2q_pairs(program: List[Instruction]) -> list:
+    """Order-preserving deduplication of the program's routable 2q pairs.
+
+    Returns a list of (q0, q1) tuples where each tuple appears at most once,
+    in first-occurrence order. Multiplicity is discarded because under the
+    proxy oracle, multiplicity scales the sum by a constant and does not
+    affect layout ranking.
+
+    Order preservation is for determinism only — the proxy itself is
+    order-insensitive.
+    """
+    seen: dict = {}
+    for instr in program:
+        pair = _two_qubit_qubits(instr)
+        if pair is not None and pair not in seen:
+            seen[pair] = None
+    return list(seen.keys())
+
+
+def _proxy_cost(
+    unique_pairs: list,
+    layout: dict,
+    distances: dict,
+) -> float:
+    """Sum-of-distances proxy cost for a candidate layout.
+
+    For each unique 2q-pair (u, v) in the source program, the routed SWAP
+    count for that pair is at least max(0, distance(layout[u], layout[v]) - 1):
+    one SWAP is needed per hop of separation beyond adjacency. Summing this
+    lower bound across all unique pairs gives a layout-quality score where
+    LOWER is BETTER.
+
+    :param unique_pairs: deduplicated list of (virtual_u, virtual_v) tuples
+        from the source program (see _dedup_unique_2q_pairs).
+    :param layout: virtual->physical mapping under evaluation.
+    :param distances: per-topology cached all-pairs BFS distances (from
+        _all_pairs_distance). Keys are (phys_src, phys_dst) tuples.
+    :return: integer score (or math.inf if any pair is unreachable);
+        lower is better; 0 means every unique 2q-pair is already on a
+        topology edge under this layout.
+    """
+    total = 0
+    for u, v in unique_pairs:
+        d = distances.get((layout[u], layout[v]), math.inf)
+        if d > 1:
+            total += d - 1
+    return total
+
+
+def _effective_max_rounds(n_qubits: int, base: int = MAX_ROUNDS_DEFAULT) -> int:
+    """Adaptive cap: spend rounds frugally on wide topologies because the
+    inner pair-scan already does C(N, 2) work per round.
+
+    For N >= 17, returns the floor of 3 rounds.
+
+    :param n_qubits: number of virtual qubits in the program.
+    :param base: base maximum rounds (default MAX_ROUNDS_DEFAULT=50).
+    :return: effective maximum rounds.
+    """
+    if n_qubits <= 0:
+        return base
+    return max(3, base // n_qubits)
+
+
+def _unmap_to_virtual(
+    program: List[Instruction],
+    init_mapping: dict,
+) -> List[Instruction]:
+    """Invert MappedPass: rewrite a physical-coordinate program back to virtual
+    coordinates using the inverse of init_mapping.
+
+    This is the inverse of QPUMapping.map / MappedPass. Used only on the
+    oracle="routing" (sabre_lite) path inside LayoutSelectionPass to satisfy
+    LayoutSelection._count_swaps which expects virtual-qubit input.
+
+    :param program: physical-qubit instruction list (post-MappedPass).
+    :param init_mapping: virtual->physical mapping (from qreg.mapping.mapping).
+    :return: virtual-qubit instruction list.
+
+    TODO (Perf #11 follow-up): refactor _count_swaps to accept a pre-mapped
+    program + delta-permutation to eliminate this round-trip.
+    """
+    phys_to_virt = {p: v for v, p in init_mapping.items()}
+    return [_rewrite(instr, phys_to_virt) for instr in program]
+
+
+def _trivial_then_improve(
+    cost,
+    initial: dict,
+    virtual_keys: list,
+    max_rounds: int,
+    patience: int,
+) -> dict:
+    """Trivial-then-improve layout search loop.
+
+    Extracted from LayoutSelection.compute_layout (Perf #11 refactor) so it
+    can be shared between the legacy static method and the new LayoutSelectionPass.
+
+    :param cost: callable(layout: dict) -> numeric — lower is better.
+    :param initial: starting virtual->physical mapping.
+    :param virtual_keys: sorted list of virtual qubit ids.
+    :param max_rounds: maximum improvement rounds.
+    :param patience: early-stop after this many non-improving rounds.
+    :return: best virtual->physical mapping found.
+    """
+    best = dict(initial)
+    best_cost = cost(best)
+    no_improve = 0
+
+    pairs: list = sorted(
+        combinations(virtual_keys, 2),
+        key=lambda p: (p[0], p[1]),
+    )
+
+    for _ in range(max_rounds):
+        improved = False
+        for (va, vb) in pairs:
+            cand = dict(best)
+            cand[va], cand[vb] = cand[vb], cand[va]
+            c = cost(cand)
+            if c < best_cost:
+                best, best_cost = cand, c
+                improved = True
+                break  # restart pair scan from the top
+        if not improved:
+            no_improve += 1
+            if no_improve >= patience:
+                break
+        else:
+            no_improve = 0
+
+    return best
 
 
 # Per-topology cache of all-pairs BFS distances. Topology is treated as
@@ -133,6 +271,122 @@ def _rewrite(instr: Instruction, layout: dict) -> Instruction:
     out.post = instr.post.copy()
     out.is_mapped = True
     return out
+
+
+# ---------------------------------------------------------------------------
+# LayoutSelectionPass — new Pass (Perf #11)
+# ---------------------------------------------------------------------------
+
+class LayoutSelectionPass(Pass):
+    """Layout-selection pass — choose virtual->physical permutation, then
+    re-map the program so subsequent passes operate on the chosen layout.
+
+    Runs first in the lower_swap group when the active routing strategy is
+    one of {"sabre_lite", "sabre_fast"}. The choice of oracle is bound at
+    construction time:
+
+      * "sabre_fast"  -> _proxy_cost oracle (sum-of-pairwise-distances over
+                        unique 2q-pairs) + adaptive max_rounds.
+      * "sabre_lite"  -> legacy LayoutSelection._count_swaps oracle
+                        (full LookaheadSwapInsertion simulation per candidate).
+
+    Both modes use the same trivial-then-improve outer loop semantics; only
+    the inner cost function and the max_rounds cap differ.
+    """
+
+    name = "layout_selection"
+    applies_to = "arch"
+
+    def __init__(
+        self,
+        qreg: QRegister,
+        isa: ISA,
+        topology: QPUTopology,
+        oracle: str = "proxy",   # "proxy" -> sabre_fast; "routing" -> sabre_lite
+    ) -> None:
+        """Create the layout-selection pass.
+
+        :param qreg: quantum register (provides the initial virtual->physical mapping)
+        :param isa: instruction set architecture (used by the routing oracle path)
+        :param topology: QPU connectivity graph
+        :param oracle: cost oracle to use. "proxy" uses the fast sum-of-distances
+            proxy (sabre_fast default). "routing" uses the legacy full routing
+            simulation (sabre_lite explicit opt-in).
+        """
+        self._qreg = qreg
+        self._isa = isa
+        self._topology = topology
+        if oracle not in ("proxy", "routing"):
+            raise ValueError(
+                f"LayoutSelectionPass: oracle must be 'proxy' or 'routing', "
+                f"got {oracle!r}"
+            )
+        self._oracle = oracle
+
+    def run(self, program: List[Instruction], ctx: PassContext):
+        """Compute an improved layout and re-map the program in place.
+
+        Operates on a physical-qubit program (post-MappedPass). Rewrites
+        every instruction's qubit indices so that downstream passes (in
+        particular LookaheadSwapInsertion) see the program in coordinates
+        that are optimal for the chosen layout.
+
+        :param program: physical-qubit instruction list.
+        :param ctx: pass context; results are stashed in ctx.scratchpad.
+        :return: (rewritten_program, changed) where changed=True iff the
+            chosen layout differs from the initial mapping.
+        """
+        if not program:
+            return list(program), False
+
+        topology = self._topology
+        isa = self._isa
+        init_mapping = dict(self._qreg.mapping.mapping)   # virtual->physical
+        virtual_keys = sorted(init_mapping.keys())
+        distances = _all_pairs_distance(topology)
+
+        if self._oracle == "proxy":
+            # Program is in physical coordinates (post-MappedPass); we need
+            # virtual pairs for the proxy oracle.  Invert init_mapping once
+            # to recover virtual ids from physical ids.
+            unique_phys_pairs = _dedup_unique_2q_pairs(program)
+            phys_to_virt = {p: v for v, p in init_mapping.items()}
+            unique_virtual_pairs = [
+                (phys_to_virt[p0], phys_to_virt[p1])
+                for (p0, p1) in unique_phys_pairs
+                if p0 in phys_to_virt and p1 in phys_to_virt
+            ]
+            cost = lambda layout: _proxy_cost(unique_virtual_pairs, layout, distances)
+            effective_max = _effective_max_rounds(len(virtual_keys), MAX_ROUNDS_DEFAULT)
+        else:
+            # "routing" oracle path (sabre_lite): invert program back to
+            # virtual coordinates so _count_swaps can re-apply candidate layouts.
+            # TODO (Perf #11 follow-up): refactor _count_swaps to accept a
+            # pre-mapped program to eliminate this O(|program|) round-trip.
+            virtual_program = _unmap_to_virtual(program, init_mapping)
+            cost = lambda layout: LayoutSelection._count_swaps(
+                virtual_program, layout, topology, isa
+            )
+            effective_max = MAX_ROUNDS_DEFAULT
+
+        new_layout = _trivial_then_improve(
+            cost,
+            initial=init_mapping,
+            virtual_keys=virtual_keys,
+            max_rounds=effective_max,
+            patience=PATIENCE_DEFAULT,
+        )
+
+        if new_layout == init_mapping:
+            return list(program), False
+
+        # Build phys->phys permutation: "re-map instructions from init_mapping
+        # coordinates to new_layout coordinates."
+        # perm[p_old] = p_new for each virtual qubit.
+        perm = {init_mapping[v]: new_layout[v] for v in init_mapping}
+        ctx.scratchpad["layout_selection.new_layout"] = dict(new_layout)
+        ctx.scratchpad["layout_selection.permutation"] = dict(perm)
+        return [_rewrite(i, perm) for i in program], True
 
 
 def _score_swap(
@@ -407,6 +661,10 @@ class LayoutSelection:
         better layouts only (lower SWAP count). Stop when patience
         non-improving rounds have passed or max_rounds is reached.
 
+        This is the legacy public API preserved for backward compatibility.
+        As of Perf #11 it delegates to the private _trivial_then_improve
+        helper, which is also used by LayoutSelectionPass.
+
         :param program: virtual-qubit instruction list (pre-MappedPass)
         :param topology: QPU connectivity
         :param isa: ISA for SWAP construction in dry runs
@@ -418,34 +676,9 @@ class LayoutSelection:
         if not program:
             return dict(initial_layout)
 
-        best = dict(initial_layout)
-        best_swaps = LayoutSelection._count_swaps(program, best, topology, isa)
-        no_improve = 0
-
         virtual_keys = sorted(initial_layout.keys())
-        pairs: list = sorted(
-            combinations(virtual_keys, 2),
-            key=lambda p: (p[0], p[1]),
-        )
-
-        for _ in range(max_rounds):
-            improved = False
-            for (va, vb) in pairs:
-                cand = dict(best)
-                cand[va], cand[vb] = cand[vb], cand[va]
-                c_swaps = LayoutSelection._count_swaps(program, cand, topology, isa)
-                if c_swaps < best_swaps:
-                    best, best_swaps = cand, c_swaps
-                    improved = True
-                    break  # restart pair scan from the top
-            if not improved:
-                no_improve += 1
-                if no_improve >= patience:
-                    break
-            else:
-                no_improve = 0
-
-        return best
+        cost = lambda layout: LayoutSelection._count_swaps(program, layout, topology, isa)
+        return _trivial_then_improve(cost, initial_layout, virtual_keys, max_rounds, patience)
 
     @staticmethod
     def _count_swaps(

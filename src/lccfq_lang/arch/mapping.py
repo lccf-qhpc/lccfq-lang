@@ -21,7 +21,7 @@ class QPUMapping:
     A mapping from virtual to real qubits in LCCFQ.
     """
 
-    _VALID_ROUTING_STRATEGIES: tuple = ("identity", "sabre_lite")
+    _VALID_ROUTING_STRATEGIES: tuple = ("identity", "sabre_lite", "sabre_fast")
 
     def __init__(
         self,

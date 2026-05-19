@@ -129,16 +129,24 @@ def build_lowering_groups(
             )
         effective_strategy = routing_strategy
 
-    # Pick the swap pass based on effective strategy.
-    if effective_strategy == "sabre_lite":
-        from .routing import LookaheadSwapInsertion
+    # Pick the swap pass + layout-selection pass based on effective strategy.
+    # For sabre_lite and sabre_fast, LayoutSelectionPass runs first in the
+    # lower_swap group (Perf #11 E1); it re-maps the program to the chosen
+    # layout before LookaheadSwapInsertion routes it.
+    if effective_strategy in ("sabre_lite", "sabre_fast"):
+        from .routing import LookaheadSwapInsertion, LayoutSelectionPass
+        layout_pass = LayoutSelectionPass(
+            qreg, qpu.isa, qpu.mapping.topology,
+            oracle="proxy" if effective_strategy == "sabre_fast" else "routing",
+        )
         swap_pass = LookaheadSwapInsertion(qreg, qpu.isa, qpu.mapping.topology)
+        lower_swap_passes = [layout_pass, swap_pass]
     else:
-        swap_pass = SwappedPass(qreg, qpu.isa)
+        lower_swap_passes = [SwappedPass(qreg, qpu.isa)]
 
     groups: list[PassGroup] = [
         PassGroup("lower_map",  "linear", [MappedPass(qreg)]),
-        PassGroup("lower_swap", "linear", [swap_pass]),
+        PassGroup("lower_swap", "linear", lower_swap_passes),
         PassGroup(
             "lower_expand",
             "linear",

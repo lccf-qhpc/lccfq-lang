@@ -18,11 +18,16 @@ from lccfq_lang.mach.topology import QPUTopology
 from lccfq_lang.opt.builtin.routing import (
     LookaheadSwapInsertion,
     LayoutSelection,
+    LayoutSelectionPass,
     _two_qubit_qubits,
     _all_pairs_distance,
     _bfs_distance,
     _score_swap,
     _rewrite,
+    _dedup_unique_2q_pairs,
+    _proxy_cost,
+    _effective_max_rounds,
+    MAX_ROUNDS_DEFAULT,
 )
 from lccfq_lang.opt.pass_base import PassContext
 from lccfq_lang.sys.base import QPUConfig
@@ -224,13 +229,13 @@ def test_layout_improves_swap_count(isa, topo4):
 
 def test_routing_strategy_validation(topo4):
     """QPUMapping with an invalid routing_strategy must raise ValueError with
-    the exact error message specified in §14."""
+    the exact error message specified in §14 (updated for Perf #11)."""
     with pytest.raises(ValueError) as exc_info:
         QPUMapping([0, 1], topo4, routing_strategy="bogus")
 
     assert str(exc_info.value) == (
         "QPUMapping: routing_strategy must be one of "
-        "('identity', 'sabre_lite'), got 'bogus'"
+        "('identity', 'sabre_lite', 'sabre_fast'), got 'bogus'"
     )
 
 
@@ -470,3 +475,381 @@ def test_1q_only_no_swaps_mixed_with_measure(isa, topo4, ctx4):
 
     assert not any(i.symbol == "swap" for i in result)
     assert len(result) == 3
+
+
+# ---------------------------------------------------------------------------
+# Perf #11 new tests (N1–N17)
+# ---------------------------------------------------------------------------
+
+# Helper: build a QRegister for testing LayoutSelectionPass.
+def _make_qreg(virtual_qubits, topo, isa_inst):
+    from lccfq_lang.arch.register import QRegister
+    mapping = QPUMapping(virtual_qubits, topo)
+    return QRegister(len(virtual_qubits), mapping, isa_inst)
+
+
+# N1: sabre_fast strategy accepted by mapping
+def test_sabre_fast_strategy_accepted_by_mapping(topo4):
+    """QPUMapping with routing_strategy='sabre_fast' constructs without error."""
+    m = QPUMapping([0, 1, 2, 3], topo4, routing_strategy="sabre_fast")
+    assert m.routing_strategy == "sabre_fast"
+
+
+# N2: _dedup_unique_2q_pairs — basic deduplication and exclusions
+def test_dedup_unique_2q_pairs_basic(isa):
+    """cx(0,1), cx(0,1), cx(1,2), h(0), measure → [(0,1), (1,2)]."""
+    program = [
+        isa.cx(ct=0, tg=1),
+        isa.cx(ct=0, tg=1),  # duplicate
+        isa.cx(ct=1, tg=2),
+        isa.h(tg=0),         # 1q — excluded
+        isa.measure(tgs=[0]),  # measure — excluded
+    ]
+    result = _dedup_unique_2q_pairs(program)
+    assert result == [(0, 1), (1, 2)]
+
+
+# N3: _dedup_unique_2q_pairs — order preservation
+def test_dedup_unique_2q_pairs_preserves_order(isa):
+    """First-occurrence order is preserved; different emission order → different result."""
+    program_a = [isa.cx(ct=0, tg=1), isa.cx(ct=1, tg=2)]
+    program_b = [isa.cx(ct=1, tg=2), isa.cx(ct=0, tg=1)]
+    result_a = _dedup_unique_2q_pairs(program_a)
+    result_b = _dedup_unique_2q_pairs(program_b)
+    assert result_a == [(0, 1), (1, 2)]
+    assert result_b == [(1, 2), (0, 1)]
+    # Same set of pairs but different order.
+    assert set(result_a) == set(result_b)
+    assert result_a != result_b
+
+
+# N4: _proxy_cost — ranks known fixture correctly
+def test_proxy_cost_ranks_known_fixture(topo4):
+    """On linear-4, unique_pair (0,3): identity layout (d=3) → cost 2."""
+    distances = _all_pairs_distance(topo4)
+    # virtual pair (0, 3); layout is virtual->physical
+    unique_virtual_pairs = [(0, 3)]
+    # Identity layout: virt 0->phys 0, virt 3->phys 3; d(0,3)=3 → cost=2.
+    layout_identity = {0: 0, 1: 1, 2: 2, 3: 3}
+    cost_identity = _proxy_cost(unique_virtual_pairs, layout_identity, distances)
+    assert cost_identity == 2
+
+    # Swap layout: virt 0->phys 0, virt 3->phys 2; d(0,2)=2 → cost=1.
+    layout_swap = {0: 0, 1: 1, 2: 3, 3: 2}
+    cost_swap = _proxy_cost(unique_virtual_pairs, layout_swap, distances)
+    assert cost_swap == 1
+
+    # Optimal layout: virt 0->phys 0, virt 3->phys 1; d(0,1)=1 → cost=0.
+    layout_opt = {0: 0, 1: 2, 2: 3, 3: 1}
+    cost_opt = _proxy_cost(unique_virtual_pairs, layout_opt, distances)
+    assert cost_opt == 0
+
+    # cost_identity > cost_swap > cost_opt
+    assert cost_identity > cost_swap >= cost_opt
+
+
+# N5: _proxy_cost — zero on adjacent pairs
+def test_proxy_cost_zero_on_adjacent_pairs(topo4):
+    """Pairs already on edges → cost 0."""
+    distances = _all_pairs_distance(topo4)
+    # On linear-4: (0,1), (1,2), (2,3) are edges (d=1).
+    unique_pairs = [(0, 1), (1, 2), (2, 3)]
+    layout = {0: 0, 1: 1, 2: 2, 3: 3}
+    cost = _proxy_cost(unique_pairs, layout, distances)
+    assert cost == 0
+
+
+# N6: _effective_max_rounds — formula spot checks
+def test_effective_max_rounds_formula():
+    """Verify adaptive cap formula: max(3, MAX_ROUNDS_DEFAULT // n_qubits)."""
+    assert _effective_max_rounds(0) == MAX_ROUNDS_DEFAULT   # n=0 → base
+    assert _effective_max_rounds(1) == 50    # 50//1 = 50
+    assert _effective_max_rounds(3) == 16    # 50//3 = 16
+    assert _effective_max_rounds(5) == 10    # 50//5 = 10
+    assert _effective_max_rounds(10) == 5    # 50//10 = 5
+    assert _effective_max_rounds(17) == 3    # 50//17 = 2 → floored to 3
+    assert _effective_max_rounds(20) == 3    # 50//20 = 2 → floored to 3
+
+
+# N7: LayoutSelectionPass returns changed=True when layout changes
+def test_layout_selection_pass_returns_changed_true_when_layout_changes(isa, topo4):
+    """Repeated cx(0,3) fixture: LayoutSelectionPass must find a better layout."""
+    from lccfq_lang.opt.builtin.lower_passes import MappedPass
+
+    virtual_program = []
+    for _ in range(5):
+        virtual_program.append(isa.cx(ct=0, tg=3))
+        virtual_program.append(isa.cx(ct=3, tg=0))
+
+    qreg = _make_qreg([0, 1, 2, 3], topo4, isa)
+    ctx = PassContext(topology=topo4, isa=isa)
+
+    # First apply MappedPass (virtual->physical).
+    mapped_pass = MappedPass(qreg)
+    mapped_program, _ = mapped_pass.run(virtual_program, ctx)
+
+    # Then run LayoutSelectionPass.
+    layout_pass = LayoutSelectionPass(qreg, isa, topo4, oracle="proxy")
+    out_program, changed = layout_pass.run(mapped_program, ctx)
+
+    # The proxy should find a better layout for cx(0,3) on a linear-4.
+    assert changed is True
+    # The rewritten program should have 2q gates on a closer physical pair.
+    out_pairs = {
+        (min(i.control_qubits[0], i.target_qubits[0]),
+         max(i.control_qubits[0], i.target_qubits[0]))
+        for i in out_program
+        if _two_qubit_qubits(i) is not None
+    }
+    # Identity layout puts them at distance 3; any improvement means ≤ distance 2.
+    from lccfq_lang.opt.builtin.routing import _all_pairs_distance
+    dist = _all_pairs_distance(topo4)
+    max_dist = max(dist.get((a, b), 0) for (a, b) in out_pairs) if out_pairs else 0
+    assert max_dist <= 2, (
+        f"Expected improved layout with max distance ≤ 2, got {max_dist}"
+    )
+
+
+# N8: LayoutSelectionPass returns changed=False when layout already optimal
+def test_layout_selection_pass_returns_changed_false_when_layout_optimal(isa, topo4):
+    """cx(0,1)+cx(1,2) on linear-4 with identity mapping — already optimal."""
+    from lccfq_lang.opt.builtin.lower_passes import MappedPass
+
+    virtual_program = [isa.cx(ct=0, tg=1), isa.cx(ct=1, tg=2)]
+    qreg = _make_qreg([0, 1, 2, 3], topo4, isa)
+    ctx = PassContext(topology=topo4, isa=isa)
+
+    mapped_pass = MappedPass(qreg)
+    mapped_program, _ = mapped_pass.run(virtual_program, ctx)
+
+    layout_pass = LayoutSelectionPass(qreg, isa, topo4, oracle="proxy")
+    out_program, changed = layout_pass.run(mapped_program, ctx)
+
+    # Adjacent pairs on identity layout are already cost=0; no change expected.
+    assert changed is False
+
+
+# N9: LayoutSelectionPass is first in lower_swap when sabre_fast
+def test_layout_selection_pass_is_first_in_lower_swap_when_sabre_fast(topo4, isa):
+    """build_lowering_groups with sabre_fast: lower_swap[0].name == 'layout_selection'."""
+    from pathlib import Path
+    from lccfq_lang.backend import QPU
+    from lccfq_lang.opt.builtin.lower_passes import build_lowering_groups
+
+    qpu = QPU(
+        filename=str(Path(__file__).parent.parent / "data" / "testing.toml"),
+        last_pass="swapped",
+    )
+    qreg = qpu.qregister(4)
+    groups = build_lowering_groups(qreg, qpu, routing_strategy="sabre_fast")
+    lower_swap = next(g for g in groups if g.name == "lower_swap")
+    assert lower_swap.passes[0].name == "layout_selection"
+    assert lower_swap.passes[1].name == "swapped"
+
+
+# N10: LayoutSelectionPass is first in lower_swap when sabre_lite
+def test_layout_selection_pass_is_first_in_lower_swap_when_sabre_lite(topo4, isa):
+    """build_lowering_groups with sabre_lite: lower_swap[0].name == 'layout_selection'."""
+    from pathlib import Path
+    from lccfq_lang.backend import QPU
+    from lccfq_lang.opt.builtin.lower_passes import build_lowering_groups
+
+    qpu = QPU(
+        filename=str(Path(__file__).parent.parent / "data" / "testing.toml"),
+        last_pass="swapped",
+    )
+    qreg = qpu.qregister(4)
+    groups = build_lowering_groups(qreg, qpu, routing_strategy="sabre_lite")
+    lower_swap = next(g for g in groups if g.name == "lower_swap")
+    assert lower_swap.passes[0].name == "layout_selection"
+    assert lower_swap.passes[1].name == "swapped"
+
+
+# N11: LayoutSelectionPass absent when strategy is identity
+def test_layout_selection_pass_absent_when_identity(topo4, isa):
+    """With routing_strategy='identity', lower_swap contains only SwappedPass."""
+    from pathlib import Path
+    from lccfq_lang.backend import QPU
+    from lccfq_lang.opt.builtin.lower_passes import build_lowering_groups
+
+    qpu = QPU(
+        filename=str(Path(__file__).parent.parent / "data" / "testing.toml"),
+        last_pass="swapped",
+    )
+    qreg = qpu.qregister(4)
+    groups = build_lowering_groups(qreg, qpu, routing_strategy="identity")
+    lower_swap = next(g for g in groups if g.name == "lower_swap")
+    assert len(lower_swap.passes) == 1
+    assert lower_swap.passes[0].name == "swapped"
+
+
+# N12: LayoutSelectionPass records scratchpad keys
+def test_layout_selection_pass_records_scratchpad_keys(isa, topo4):
+    """After running LayoutSelectionPass with a non-identity result,
+    ctx.scratchpad must contain layout_selection.new_layout and
+    layout_selection.permutation."""
+    from lccfq_lang.opt.builtin.lower_passes import MappedPass
+
+    virtual_program = []
+    for _ in range(5):
+        virtual_program.append(isa.cx(ct=0, tg=3))
+        virtual_program.append(isa.cx(ct=3, tg=0))
+
+    qreg = _make_qreg([0, 1, 2, 3], topo4, isa)
+    ctx = PassContext(topology=topo4, isa=isa)
+
+    mapped_pass = MappedPass(qreg)
+    mapped_program, _ = mapped_pass.run(virtual_program, ctx)
+
+    layout_pass = LayoutSelectionPass(qreg, isa, topo4, oracle="proxy")
+    _, changed = layout_pass.run(mapped_program, ctx)
+
+    if changed:
+        assert "layout_selection.new_layout" in ctx.scratchpad
+        assert "layout_selection.permutation" in ctx.scratchpad
+        nl = ctx.scratchpad["layout_selection.new_layout"]
+        perm = ctx.scratchpad["layout_selection.permutation"]
+        # new_layout is virtual->physical; perm is phys->phys
+        assert set(nl.keys()) == {0, 1, 2, 3}
+        assert set(perm.keys()).issubset(set(topo4.qubits()))
+    else:
+        # If layout didn't change (already optimal), scratchpad is not populated.
+        pass
+
+
+# N13: end-to-end Circuit opt_level=2 uses sabre_fast
+def test_end_to_end_circuit_opt_level_2_uses_sabre_fast():
+    """Circuit(opt_level=2, report=True): opt_report['routing_strategy'] == 'sabre_fast'
+    and lower_swap group has passes[0].name == 'layout_selection'."""
+    from pathlib import Path
+    from lccfq_lang.backend import QPU
+    from lccfq_lang.arch.context import Circuit
+    from lccfq_lang.arch.register import QRegister, CRegister
+
+    qpu = QPU(
+        filename=str(Path(__file__).parent.parent / "data" / "testing.toml"),
+        last_pass="swapped",
+    )
+    qreg = qpu.qregister(4)
+    creg = CRegister(4)
+
+    with Circuit(qreg, creg, qpu=qpu, opt_level=2, report=True) as c:
+        c >> qpu.isa.cx(ct=0, tg=3)
+        c >> qpu.isa.cx(ct=3, tg=0)
+
+    report = c.opt_report
+    assert report is not None
+    assert report["routing_strategy"] == "sabre_fast"
+
+    # Find the lower_swap group.
+    lower_swap_group = next(
+        (g for g in report["groups"] if g["name"] == "lower_swap"),
+        None,
+    )
+    assert lower_swap_group is not None
+    assert lower_swap_group["passes"][0]["name"] == "layout_selection"
+
+
+# N14: explicit sabre_lite preserved at opt_level=1
+def test_end_to_end_circuit_explicit_sabre_lite_preserved():
+    """QPUMapping with sabre_lite + opt_level=1: stays sabre_lite."""
+    from pathlib import Path
+    from lccfq_lang.backend import QPU
+    from lccfq_lang.arch.context import Circuit
+    from lccfq_lang.arch.register import QRegister, CRegister
+    from lccfq_lang.arch.mapping import QPUMapping
+    from lccfq_lang.mach.topology import QPUTopology
+    from lccfq_lang.sys.base import QPUConfig
+    import toml
+
+    qpu = QPU(
+        filename=str(Path(__file__).parent.parent / "data" / "testing.toml"),
+        last_pass="swapped",
+    )
+    # Manually create a qreg with sabre_lite strategy.
+    from lccfq_lang.arch.register import QRegister
+    mapping = QPUMapping([0, 1, 2, 3], qpu.mapping.topology, routing_strategy="sabre_lite")
+    from lccfq_lang.arch.register import QRegister
+    qreg = QRegister(4, mapping, qpu.isa)
+    creg = CRegister(4)
+
+    with Circuit(qreg, creg, qpu=qpu, opt_level=1, report=True) as c:
+        c >> qpu.isa.cx(ct=0, tg=3)
+        c >> qpu.isa.cx(ct=3, tg=0)
+
+    report = c.opt_report
+    assert report is not None
+    assert report["routing_strategy"] == "sabre_lite"
+
+
+# N15: layout improvement via LayoutSelectionPass ≤ legacy + slack
+def test_layout_improvement_via_pass_matches_legacy_sabre_lite(isa, topo4):
+    """Repeated cx(0,3) fixture: sabre_fast SWAP count ≤ sabre_lite SWAP count + 2."""
+    from lccfq_lang.opt.builtin.lower_passes import MappedPass, build_lowering_groups
+    from lccfq_lang.opt.manager import PassManager
+    from pathlib import Path
+    from lccfq_lang.backend import QPU
+
+    qpu = QPU(
+        filename=str(Path(__file__).parent.parent / "data" / "testing.toml"),
+        last_pass="swapped",
+    )
+
+    virtual_program = []
+    for _ in range(5):
+        virtual_program.append(isa.cx(ct=0, tg=3))
+        virtual_program.append(isa.cx(ct=3, tg=0))
+
+    def _count_swaps_for_strategy(strategy):
+        qreg = qpu.qregister(4)
+        ctx = PassContext(
+            qpu_config=qpu.config,
+            isa=qpu.isa,
+            mapping=qreg.mapping,
+            topology=topo4,
+        )
+        groups = build_lowering_groups(qreg, qpu, routing_strategy=strategy)
+        # Only run up to lower_swap.
+        from lccfq_lang.opt.builtin.lower_passes import slice_groups_for
+        groups = slice_groups_for("swapped", groups)
+        program, _, _ = PassManager(groups).run(list(virtual_program), ctx)
+        return sum(1 for i in program if i.symbol == "swap")
+
+    fast_swaps = _count_swaps_for_strategy("sabre_fast")
+    lite_swaps = _count_swaps_for_strategy("sabre_lite")
+
+    # Regression guard: proxy should not be dramatically worse.
+    assert fast_swaps <= lite_swaps + 2, (
+        f"sabre_fast SWAP count ({fast_swaps}) exceeded sabre_lite ({lite_swaps}) + 2"
+    )
+
+
+# N16: opt_report lower_swap group has two passes under sabre_fast
+def test_opt_report_lower_swap_group_has_two_passes_under_sabre_fast():
+    """Direct check: len(lower_swap['passes']) == 2 under sabre_fast."""
+    from pathlib import Path
+    from lccfq_lang.backend import QPU
+    from lccfq_lang.arch.context import Circuit
+    from lccfq_lang.arch.register import CRegister
+
+    qpu = QPU(
+        filename=str(Path(__file__).parent.parent / "data" / "testing.toml"),
+        last_pass="swapped",
+    )
+    qreg = qpu.qregister(4)
+    creg = CRegister(4)
+
+    with Circuit(qreg, creg, qpu=qpu, opt_level=2, report=True) as c:
+        c >> qpu.isa.cx(ct=0, tg=3)
+        c >> qpu.isa.cx(ct=0, tg=2)
+
+    report = c.opt_report
+    lower_swap_group = next(
+        (g for g in report["groups"] if g["name"] == "lower_swap"),
+        None,
+    )
+    assert lower_swap_group is not None
+    assert len(lower_swap_group["passes"]) == 2, (
+        f"Expected 2 passes in lower_swap under sabre_fast, "
+        f"got {len(lower_swap_group['passes'])}"
+    )

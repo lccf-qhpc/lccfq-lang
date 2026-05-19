@@ -203,34 +203,22 @@ class Circuit:
         from lccfq_lang.opt.builtin.lower_passes import (
             build_lowering_groups, slice_groups_for,
         )
-        from lccfq_lang.opt.builtin.routing import LayoutSelection
 
         # Phase 4: resolve effective routing strategy.
-        # opt_level >= 2 forces "sabre_lite" regardless of mapping default.
+        # opt_level >= 2 forces "sabre_fast" (Perf #11: was "sabre_lite").
+        # Layout selection now happens inside LayoutSelectionPass within the
+        # PassManager (lower_swap group), rather than here in __exit__.
         base_strategy = self.qreg.mapping.routing_strategy
 
         if self._opt_level >= 2:
-            effective_strategy = "sabre_lite"
+            effective_strategy = "sabre_fast"
         else:
             effective_strategy = base_strategy
-
-        # Optionally rebind qreg.mapping with an improved layout for this run.
-        qreg_for_run = self.qreg
-
-        if effective_strategy == "sabre_lite":
-            new_layout = LayoutSelection.compute_layout(
-                program=self.instructions,
-                topology=self.qreg.mapping.topology,
-                isa=self.qpu.isa,
-                initial_layout=dict(self.qreg.mapping.mapping),
-            )
-            new_mapping = self.qreg.mapping.with_layout(new_layout)
-            qreg_for_run = self.qreg.rebind_mapping(new_mapping)
 
         groups = slice_groups_for(
             last_pass,
             build_lowering_groups(
-                qreg_for_run,
+                self.qreg,
                 self.qpu,
                 opt_level=self._opt_level,
                 opt_passes=self._opt_passes,
@@ -240,8 +228,8 @@ class Circuit:
         ctx = PassContext(
             qpu_config=self.qpu.config,
             isa=self.qpu.isa,
-            mapping=qreg_for_run.mapping,
-            topology=qreg_for_run.mapping.topology,
+            mapping=self.qreg.mapping,
+            topology=self.qreg.mapping.topology,
         )
         program, records, groups_meta = PassManager(groups).run(self.instructions, ctx)
         self._opt_records = records
