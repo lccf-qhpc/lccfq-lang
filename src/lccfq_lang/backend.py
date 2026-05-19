@@ -9,6 +9,8 @@ Description:
 License: Apache 2.0
 Contact: nunezco2@illinois.edu
 """
+import grpc
+import time
 import toml
 
 from enum import Enum
@@ -26,6 +28,11 @@ from .sys.error import BadQPUConfiguration
 from .arch.instruction import Instruction
 from .sys.base import QPUConfig
 from .sys.factories.mach import TranspilerFactory
+
+from lccfq_backend.utils.log import setup_logger
+from lccfq_backend.api.client import Client
+
+logger = setup_logger("lccfq_lang.QPU")
 
 
 class QPUStatus(Enum):
@@ -45,7 +52,7 @@ class QPUStatus(Enum):
 
 class QPU:
     """A `QPU` determines all interactions with the device through issuing circuit, control and benchmark
-    instructions. Accessing the backend requires submitting requests through a REST interface. An HPC system
+    instructions. Accessing the backend requires submitting requests through a gRPC interface. An HPC system
     will run a single instance of the backend, which will communicate with lccfq_lang through this interface.
 
     New programs will always import this library.
@@ -84,6 +91,27 @@ class QPU:
             self.transpiler = Mach.transpiler
         else:
             self.transpiler = TranspilerFactory().get(self.config.name)
+
+        self.backend_client = None
+
+        # Check if last_pass is executed, in which case ping the backend to test connection.
+        if self.last_pass == "executed":
+            logger.debug("Last pass is 'executed', setting up connection with backend.")
+            con = self.config.connection
+            self.backend_client = Client(name=con.username,
+                                         address=con.address,
+                                         port=con.port,
+                                         clients_cert_dir=con.client_cert_dir,
+                                         server_cert_dir=con.server_cert)
+            logger.info("Pinging QPU backend to check connectivity...")
+            try:
+                if not self.backend_client.ping():
+                    raise ConnectionError("Could not connect to QPU backend.")
+            except grpc.RpcError or ConnectionError as e:
+                logger.error("Could not connect to QPU backend.")
+                raise e
+
+            logger.info("Successfully connected to QPU backend.")
 
     @staticmethod
     def __from_file(filename: str) -> QPUConfig:
@@ -133,17 +161,37 @@ class QPU:
         :param instruction: instruction to execute
         :param shots: number of shots
         :return: Nothing"""
-        pass
+        response = self.backend_client.submit_test_task(instruction, shots=shots)
+        return response
 
-    def exec_circuit(self, circuit: List[Gate|Test|Control], shots: int) -> Dict[str, float]:
+    def exec_circuit(self, circuit: List[Gate|Test|Control], shots: int,
+                     poll_interval: float = 1.0, timeout: float = 300.0) -> Dict[str, int]:
         """
         Execute the result of transpiling a circuit.
 
         :param circuit: a program resulting from a quantum circuit, already transpiled
         :param shots: number of shots
+        :param poll_interval: seconds between result polls
+        :param timeout: maximum seconds to wait for result
         :return: the results count from executing a circuit
         """
-        return {}
+        response = self.backend_client.submit_circuit_task(circuit, shots)
+        if response.success is not True:
+            raise RuntimeError(f"Execution failed: {response.message}")
+
+        task_id = response.task_id
+        logger.info(f"Circuit task submitted with task_id={task_id}. Polling for result...")
+
+        elapsed = 0.0
+        while elapsed < timeout:
+            result_response = self.backend_client.get_result(task_id)
+            if result_response.found:
+                logger.info(f"Result ready for task_id={task_id}")
+                return dict(result_response.circuit_result.distribution)
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+
+        raise TimeoutError(f"Timed out waiting for result of task {task_id} after {timeout}s")
 
     def map(self, instruction: Instruction) -> Instruction:
         """Forward the mapping of an instruction provided by the internal mapping.

@@ -16,8 +16,11 @@ from .error import BadQPUConfiguration
 
 @dataclass
 class QPUConnection:
-    ip: str
+    address: str
     port: int
+    username: str
+    client_cert_dir: str
+    server_cert: dir
 
 
 class QPUConfig:
@@ -49,15 +52,18 @@ class QPUConfig:
         if missing_qpu:
             raise BadQPUConfiguration(f"qpu fields {required_qpu}", f"missing: {missing_qpu}")
 
-        required_net = ["ip", "port"]
+        required_net = ["address", "port"]
         missing_net = [k for k in required_net if k not in network_data]
 
         if missing_net:
             raise BadQPUConfiguration(f"network fields {required_net}", f"missing: {missing_net}")
 
         connection = QPUConnection(
-            ip=network_data["ip"],
-            port=network_data["port"]
+            address=network_data["address"],
+            port=network_data["port"],
+            username=network_data["username"],
+            client_cert_dir=network_data["client_cert_dir"],
+            server_cert=network_data["server_cert"]
         )
 
         self.name = spec["name"]
