@@ -203,6 +203,10 @@ def _trivial_then_improve(
 _DISTANCE_CACHE: "weakref.WeakKeyDictionary[QPUTopology, dict]" = weakref.WeakKeyDictionary()
 _DISTANCE_CACHE_STATS = {"hits": 0, "misses": 0}
 
+# Per-topology cache of incident-edges-per-physical-qubit (Perf #12).
+# Mirrors the _DISTANCE_CACHE pattern; same immutability/GC guarantees.
+_INCIDENT_EDGES_CACHE: "weakref.WeakKeyDictionary[QPUTopology, dict]" = weakref.WeakKeyDictionary()
+
 
 def _all_pairs_distance(topology: QPUTopology) -> dict:
     """Pre-compute BFS all-pairs distances over the topology graph.
@@ -226,6 +230,32 @@ def _all_pairs_distance(topology: QPUTopology) -> dict:
             dist[(src, dst)] = d
     _DISTANCE_CACHE[topology] = dist
     return dist
+
+
+def _incident_edges_by_qubit(topology: QPUTopology) -> dict:
+    """Pre-compute incident-edges per physical qubit, sorted canonically.
+
+    Cached per topology object — the SAME dict instance is returned on every
+    call with the same topology (Perf #12 §D). Callers must NOT mutate the
+    returned dict or its lists.
+
+    Returns: {phys_qubit: [(u_min, v_max), ...]} where every edge has
+    u_min < v_max and the list is sorted by (u_min, v_max).
+    """
+    cached = _INCIDENT_EDGES_CACHE.get(topology)
+    if cached is not None:
+        return cached
+    g = topology.internal
+    by_q: dict = {q: [] for q in g.nodes}
+    for u, v in g.edges:
+        edge = (min(u, v), max(u, v))
+        by_q[edge[0]].append(edge)
+        if edge[1] != edge[0]:
+            by_q[edge[1]].append(edge)
+    for q in by_q:
+        by_q[q].sort()
+    _INCIDENT_EDGES_CACHE[topology] = by_q
+    return by_q
 
 
 def _bfs_distance(topology: QPUTopology, src: int, dst: int) -> int:
@@ -498,6 +528,11 @@ class LookaheadSwapInsertion(Pass):
 
         topology = self._topology
         distances = _all_pairs_distance(topology)
+        # Perf #12 §D: pre-built incident-edge lookup, cached per topology.
+        incident = _incident_edges_by_qubit(topology)
+        # Perf #12 §B: (a, b) of the most recently emitted SWAP (a < b).
+        # Used to prevent immediate (a,b)·(a,b) oscillation.
+        last_swap_pair: Optional[tuple] = None
         emitted: list = []
         queue = list(program)
         swap_emitted = False  # Perf #4: track whether any SWAP was inserted.
@@ -551,24 +586,24 @@ class LookaheadSwapInsertion(Pass):
 
             # Step 3: Build candidate SWAP set — topology edges incident to
             # the physical qubits currently used by the front layer.
-            front_phys = {
-                current_layout[head_pair[0]],
-                current_layout[head_pair[1]],
-            }
-            cand: list = sorted(
-                (
-                    (min(u, v), max(u, v))
-                    for (u, v) in topology.internal.edges
-                    if u in front_phys or v in front_phys
-                ),
-                key=lambda p: (p[0], p[1]),
-            )
+            # Perf #12 §D: use cached per-qubit incident-edge lists instead of
+            # scanning all topology edges + sorting on every iteration.
+            p0_phys = current_layout[head_pair[0]]
+            p1_phys = current_layout[head_pair[1]]
+            seen_edges: set = set()
+            cand: list = []
+            for p in (p0_phys, p1_phys):
+                for edge in incident.get(p, ()):
+                    if edge not in seen_edges:
+                        seen_edges.add(edge)
+                        cand.append(edge)
+            cand.sort()  # canonical order for tie-breaking
+
             # Safety fallback: if no incident edges (e.g., qubit isolated in
             # subgraph), expand to all topology edges.
             if not cand:
                 cand = sorted(
                     ((min(u, v), max(u, v)) for (u, v) in topology.internal.edges),
-                    key=lambda p: (p[0], p[1]),
                 )
 
             # If still no candidates, the topology has no edges at all — the
@@ -581,9 +616,15 @@ class LookaheadSwapInsertion(Pass):
 
             # Steps 4+5: Score candidates and pick best (ascending score,
             # tie-break by lowest (min, max) pair).
+            # Perf #12 §B: cancel-as-we-go — skip the candidate that would
+            # immediately reverse the previous SWAP (prevents (a,b)·(a,b)
+            # oscillation). Filter happens BEFORE scoring to save _score_swap
+            # calls on the hot case.
             best_swap = None
             best_score = math.inf
             for sp in cand:
+                if sp == last_swap_pair:
+                    continue  # cancel-as-we-go: skip immediate reversal
                 s = _score_swap(
                     sp, front, lookahead, current_layout, distances, decay,
                 )
@@ -593,6 +634,22 @@ class LookaheadSwapInsertion(Pass):
                 ):
                     best_score = s
                     best_swap = sp
+
+            # Safety fallback: if all candidates were filtered as immediate
+            # reversals (happens on degenerate topologies where the front
+            # layer has only one incident edge), re-enable and pick the
+            # least-bad candidate so we always make forward progress.
+            if best_swap is None:
+                for sp in cand:
+                    s = _score_swap(
+                        sp, front, lookahead, current_layout, distances, decay,
+                    )
+                    if s < best_score or (
+                        s == best_score
+                        and (best_swap is None or sp < best_swap)
+                    ):
+                        best_score = s
+                        best_swap = sp
 
             assert best_swap is not None, "Unreachable: cand is non-empty but no best_swap selected"
 
@@ -613,7 +670,15 @@ class LookaheadSwapInsertion(Pass):
             decay[a] = decay.get(a, 0.0) + DECAY_WEIGHT
             decay[b] = decay.get(b, 0.0) + DECAY_WEIGHT
 
+            # Perf #12 §B.4: record this SWAP for next iteration's cancel filter.
+            # best_swap is already canonical (min, max), so no re-canonicalisation.
+            last_swap_pair = best_swap
+
             # Stall detection: track distance of head 2q gate.
+            # Post-Perf-#12 (cancel-as-we-go), this cap should NEVER fire on a
+            # routable program. It is retained as a defensive assertion; firing
+            # indicates either a topology issue (truly unmappable) or a
+            # regression in cancel-as-we-go.
             new_dist = distances.get(
                 (current_layout[head_pair[0]], current_layout[head_pair[1]]),
                 math.inf,
