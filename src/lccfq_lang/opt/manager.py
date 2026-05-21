@@ -43,6 +43,7 @@ class PassGroup:
             )
         if self.max_iters < 1:
             raise ValueError(f"PassGroup {self.name}: max_iters must be >= 1")
+        # tol >= 0.0 required; negative values are reserved for future use.
         if self.tol < 0.0:
             raise ValueError(f"PassGroup {self.name}: tol must be >= 0.0")
 
@@ -294,7 +295,12 @@ class PassManager:
             improvement = (
                 group_cost_before.scalarize() - group_cost_after.scalarize()
             )
-            if improvement <= group.tol:
+            # Stop if cost regressed by more than tol (i.e. improvement < -tol).
+            # Flat iterations (improvement == 0) are allowed to continue so that
+            # reordering passes like CommuteThroughControl — which produce no gate
+            # count reduction in the same iteration but enable downstream merges
+            # in the next iteration — can propagate their effect through the group.
+            if improvement < -group.tol:
                 break
             group_cost_before = group_cost_after
 

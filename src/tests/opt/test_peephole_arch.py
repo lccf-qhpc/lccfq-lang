@@ -394,6 +394,175 @@ class TestCommuteThroughControl:
         p_out, _ = self.pass_.run(p_in, ctx)
         assert_equivalent(p_in, p_out, 2)
 
+    # --- DAG-based new tests (Task #76) ---
+
+    def test_commute_rz_past_cx_with_intervening_rotation_on_other_qubit(self):
+        """rz(0) and cx(0,1) are not list-adjacent but ARE per-qubit-chain adjacent.
+
+        The intervening ry(1) touches only qubit 1, not qubit 0, so on qubit 0's
+        chain the pair is (rz(0), cx(0,1)) which is eligible.  The DAG-based pass
+        must commute them even though they are separated in the flat list.
+        """
+        p_in = [
+            isa.rz(tg=0, params=[0.3]),
+            isa.ry(tg=1, params=[0.4]),
+            isa.cx(ct=0, tg=1),
+        ]
+        p_out, changed = self.pass_.run(p_in, ctx)
+        assert changed is True
+        # cx must appear before rz in the output
+        symbols = [instr.symbol for instr in p_out]
+        assert symbols.index("cx") < symbols.index("rz")
+        assert_equivalent(p_in, p_out, 2)
+
+    def test_commute_rx_past_cx_with_intervening_rotation_on_other_qubit(self):
+        """rx(1) and cx(0,1) are not list-adjacent but ARE per-qubit-chain adjacent.
+
+        The intervening rz(0) touches only qubit 0, not qubit 1, so on qubit 1's
+        chain the pair is (rx(1), cx(0,1)) which is eligible (rx on target).
+        """
+        p_in = [
+            isa.rx(tg=1, params=[0.3]),
+            isa.rz(tg=0, params=[0.4]),
+            isa.cx(ct=0, tg=1),
+        ]
+        p_out, changed = self.pass_.run(p_in, ctx)
+        assert changed is True
+        symbols = [instr.symbol for instr in p_out]
+        assert symbols.index("cx") < symbols.index("rx")
+        assert_equivalent(p_in, p_out, 2)
+
+    def test_enables_merge_via_fixpoint(self):
+        """CommuteThroughControl then MergeRotations collapses rz(0.3) cx rz(0.4)
+        into cx rz(0.7).
+
+        After commute: [cx(0,1), rz(0, 0.3), rz(0, 0.4)].
+        After merge:   [cx(0,1), rz(0, 0.7)].
+        """
+        p_in = [
+            isa.rz(tg=0, params=[0.3]),
+            isa.cx(ct=0, tg=1),
+            isa.rz(tg=0, params=[0.4]),
+        ]
+        commuted, changed = self.pass_.run(p_in, ctx)
+        assert changed is True
+
+        merge_pass = MergeRotations(isa)
+        merged, _ = merge_pass.run(commuted, ctx)
+
+        assert len(merged) == 2
+        assert merged[0].symbol == "cx"
+        assert merged[1].symbol == "rz"
+        assert abs(merged[1].params[0] - 0.7) < 1e-9
+
+    def test_oscillation_bounded(self):
+        """Two successive eligible controls: rz commutes past each cx in turn,
+        one per run() call (the i+=2 guard prevents double-commute in one call).
+        After two runs, rz is past both cx gates and the third run is idle.
+        """
+        p_in = [
+            isa.rz(tg=0, params=[0.3]),
+            isa.cx(ct=0, tg=1),
+            isa.cx(ct=0, tg=2),
+        ]
+        # First run: rz commutes past cx(0,1).
+        p_out1, changed1 = self.pass_.run(p_in, ctx)
+        assert changed1 is True
+        symbols1 = [instr.symbol for instr in p_out1]
+        rz_idx1 = symbols1.index("rz")
+        # At least one cx must come before rz after the first run.
+        cx_indices1 = [i for i, s in enumerate(symbols1) if s == "cx"]
+        assert any(cx_i < rz_idx1 for cx_i in cx_indices1)
+
+        # Second run: rz commutes past the remaining cx(0,2).
+        p_out2, changed2 = self.pass_.run(p_out1, ctx)
+        assert changed2 is True
+        symbols2 = [instr.symbol for instr in p_out2]
+        rz_idx2 = symbols2.index("rz")
+        cx_indices2 = [i for i, s in enumerate(symbols2) if s == "cx"]
+        # After two runs, rz must be after all cx gates.
+        assert all(cx_i < rz_idx2 for cx_i in cx_indices2)
+
+        # Third run: no eligible (rotation, control) pair remains — idle.
+        _, changed3 = self.pass_.run(p_out2, ctx)
+        assert changed3 is False
+
+    def test_swap_blocks_commute(self):
+        """SWAP(0,1) sits between rz(0) and cx(0,1) on qubit 0's chain.
+
+        _can_commute_forward(rz, swap) is False, so the pair is blocked
+        and the output order is unchanged (changed=False).
+        """
+        p_in = [
+            isa.rz(tg=0, params=[0.3]),
+            isa.swap(tg_a=0, tg_b=1),
+            isa.cx(ct=0, tg=1),
+        ]
+        p_out, changed = self.pass_.run(p_in, ctx)
+        assert changed is False
+        assert [instr.symbol for instr in p_out] == ["rz", "swap", "cx"]
+
+    def test_hwea_shape_strictly_fewer_1q_than_level2(self):
+        """Level-3 optimization produces strictly fewer 1-qubit ops than level-2
+        on a small HWEA-shaped circuit.
+
+        This is the regression that proves opt_level=3 is no longer inert
+        after the DAG-based CommuteThroughControl rewrite.
+
+        We use rotations="z" (a single rz per qubit per layer) because that is
+        the minimal rotation spec where _can_commute_forward fires on every
+        (rz, cx-control) per-qubit adjacent pair and the commuted rz lands
+        directly adjacent (on the per-qubit chain) to the next layer's rz,
+        allowing MergeRotations to fold them in the next fixpoint iteration.
+        Rotation specs whose block ends in a non-rz axis (e.g. "yz", "yzy")
+        have an ry blocker between the commuted rz and the next rz, preventing
+        the merge; they are not expected to show improvement here.
+        """
+        import math
+        from lccfq_lang.lang.variational import hw_eff_ansatz
+        from lccfq_lang.opt.builtin.level_select import passes_for_level, max_iters_for_level
+        from lccfq_lang.opt.manager import PassGroup, PassManager
+        from lccfq_lang.opt.pass_base import PassContext as PC
+
+        n_qubits = 3
+        layers = 2
+        rotations = "z"   # rz-only: commuted rz lands adjacent to next layer's rz
+        n_params = (layers + 1) * n_qubits * len(rotations)
+        params = [math.pi / (i + 1) for i in range(n_params)]
+        target = list(range(n_qubits))
+        program = hw_eff_ansatz(
+            isa, target,
+            params=params, layers=layers, rotations=rotations,
+        )
+
+        pc = PC(isa=isa)
+
+        def run_level(level: int):
+            passes = passes_for_level(level, isa)
+            group = PassGroup(
+                name="arch_opt",
+                mode="fixpoint",
+                passes=passes,
+                max_iters=max_iters_for_level(level),
+            )
+            pm = PassManager([group])
+            result, _, _ = pm.run(program, pc)
+            return result
+
+        # Level 2 needs at least one pass; skip if it would crash on empty passes.
+        from lccfq_lang.opt.op_view import OpView as OV
+
+        def count_1q(prog):
+            return sum(1 for instr in prog if len(OV(instr).qubits) == 1)
+
+        out2 = run_level(2)
+        out3 = run_level(3)
+
+        assert count_1q(out3) < count_1q(out2), (
+            f"Expected level-3 to have fewer 1q ops than level-2, "
+            f"but got level-2={count_1q(out2)}, level-3={count_1q(out3)}"
+        )
+
 
 # ===========================================================================
 # Perf #7 linked-list regression tests — long same-qubit chains

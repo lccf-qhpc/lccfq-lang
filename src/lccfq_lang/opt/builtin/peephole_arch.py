@@ -21,6 +21,7 @@ from lccfq_lang.arch.instruction import Instruction
 from lccfq_lang.arch.isa import ISA
 from lccfq_lang.opt.pass_base import Pass, PassContext
 from lccfq_lang.opt.op_view import OpView
+from lccfq_lang.opt.dag import circuit_to_dag, dag_to_program
 from ._arith import (
     SELF_INVERSE,
     INVERSE_PAIRS,
@@ -320,7 +321,17 @@ class CommuteThroughControl(Pass):
     """Slides single-qubit rotations forward past commuting control gates
     to enable downstream merges and cancellations.
 
-    DAG-based commutation deferred to Phase 2.5.
+    Uses a DAG-based strategy: builds the qubit-flow DAG, then for each
+    qubit walks its per-qubit chain looking for (rotation, control) adjacent
+    pairs that satisfy _can_commute_forward.  When a pair is eligible the
+    dependency edge is reversed (so the rotation is emitted after the
+    control) and the rotation's idx is bumped past the control's so that
+    dag_to_program's heap tie-break emits the control first.
+
+    The i+=2 oscillation guard on the per-qubit chain prevents the same
+    rotation from being re-swapped against successive controls in a single
+    run().  The outer fixpoint loop (max_iters=10 at level 3) handles
+    multi-hop commutation iteratively.
     """
 
     name = "commute_through_control"
@@ -332,20 +343,76 @@ class CommuteThroughControl(Pass):
         self._isa = isa
 
     def run(self, program: List[Instruction], ctx: PassContext):
-        out: List[Instruction] = list(program)  # shallow copy; we mutate the list, not the elements
+        if not program:
+            return [], False
+
+        g = circuit_to_dag(program)
         changed = False
-        i = 0
-        while i + 1 < len(out):
-            a, b = out[i], out[i + 1]
-            if self._can_commute_forward(a, b):
-                out[i], out[i + 1] = b, a
-                changed = True
-                # Advance past the swapped pair; do not re-examine the same
-                # rotation against the next op (avoids oscillation).
-                i += 2
-            else:
-                i += 1
-        return out, changed
+
+        # Build per-qubit chains: for each qubit, the node ids whose op
+        # touches that qubit in original (idx) order.
+        # We derive this from node attrs rather than edges to avoid
+        # needing to scan edges per qubit.
+        qubit_chains: dict[int, list[int]] = {}
+        for n in sorted(g.nodes, key=lambda n: g.nodes[n]["idx"]):
+            qs = OpView(g.nodes[n]["op"]).qubits
+            for q in qs:
+                qubit_chains.setdefault(q, []).append(n)
+
+        # Deterministic idx-bump: use (k+1)/(K+1) fractions so that
+        # multiple rotations promoted past the same control get distinct
+        # fractional offsets and the heap tie-break is stable.
+        K = len(program) + 1  # upper bound on swaps in this run
+        k = 0  # swap counter
+
+        for q, chain in qubit_chains.items():
+            i = 0
+            while i + 1 < len(chain):
+                R = chain[i]      # candidate rotation node
+                C = chain[i + 1]  # candidate control node
+                r_op = g.nodes[R]["op"]
+                c_op = g.nodes[C]["op"]
+                if self._can_commute_forward(r_op, c_op):
+                    # Verify the qubit-q edge R->C exists (it must by DAG
+                    # construction for per-qubit adjacent pairs).
+                    self._reverse_edge_on_qubit(g, R, C, q)
+                    # Bump R's idx so it sorts after C in dag_to_program's heap.
+                    g.nodes[R]["idx"] = g.nodes[C]["idx"] + (k + 1) / (K + 1)
+                    changed = True
+                    k += 1
+                    i += 2  # oscillation guard: skip past the swapped pair
+                else:
+                    i += 1
+
+        if changed:
+            return dag_to_program(g), True
+        return list(program), False
+
+    @staticmethod
+    def _reverse_edge_on_qubit(g, R: int, C: int, q: int) -> None:
+        """Invert the qubit-q dependency from R->C to C->R in place.
+
+        If the R->C edge carries other qubit labels, q is removed from
+        that edge's label set (the edge remains for the other qubits).
+        The C->R edge is created (or updated) with q in its label set.
+        """
+        if not g.has_edge(R, C):
+            # Edge may already have been removed by a prior swap on this
+            # (R, C) pair via a different qubit — nothing to undo.
+            return
+        labels = list(g[R][C]["qubits"])
+        if q not in labels:
+            return
+        labels.remove(q)
+        if labels:
+            g[R][C]["qubits"] = tuple(labels)
+        else:
+            g.remove_edge(R, C)
+        if g.has_edge(C, R):
+            existing = list(g[C][R]["qubits"])
+            g[C][R]["qubits"] = tuple(sorted(set(existing + [q])))
+        else:
+            g.add_edge(C, R, qubits=(q,))
 
     @staticmethod
     def _can_commute_forward(a: Instruction, b: Instruction) -> bool:

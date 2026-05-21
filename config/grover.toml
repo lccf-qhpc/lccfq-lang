@@ -1,12 +1,12 @@
 [qpu]
 name = "pfaff_v1"
-location = "Demo (5-qubit linear chain)"
-qubit_count = 7
+location = "Demo (9-qubit linear chain)"
+qubit_count = 9
 topology = "linear"
-qubits = [0, 1, 2, 3, 4, 5, 6]
+qubits = [0, 1, 2, 3, 4, 5, 6, 7, 8]
 exclusions = []
 couplings = [
-    [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5,6],
+    [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5,6], [6,7], [7,8]
 ]
 
 [network]
