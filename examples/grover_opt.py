@@ -282,14 +282,21 @@ def main() -> None:
         summarize(report, level, wall)
         print()
 
-    # Comparison table
-    table_width = 100
+    # Comparison table.
+    # The vs_lvl0 column is the ratio of level 0's total output gates to
+    # level i's, where "total" = 1q + 2q after the final optimization stage.
+    # Higher is better; level 0 is 1.00 by construction.
+    baseline = reports[0][0]["totals"]["cost_after"]
+    baseline_total = baseline["count_1q"] + baseline["count_2q"]
+
+    table_width = 130
     print("=" * table_width)
     header = (
         f"{'level':>5}  {'depth_in':>9}  {'depth_out':>10}  "
+        f"{'1q_in':>6}  {'1q_out':>7}  "
         f"{'2q_in':>6}  {'2q_out':>7}  "
         f"{'score_in':>10}  {'score_out':>10}  "
-        f"{'pass_s':>8}  {'wall_s':>8}"
+        f"{'pass_s':>8}  {'wall_s':>8}  {'vs_lvl0':>8}"
     )
     print(header)
     print("-" * table_width)
@@ -298,11 +305,15 @@ def main() -> None:
         report, wall = reports[level]
         b = report["totals"]["cost_before"]
         a = report["totals"]["cost_after"]
+        total_out = a["count_1q"] + a["count_2q"]
+        ratio = (baseline_total / total_out) if total_out else float("nan")
         print(
             f"{level:>5}  {b['depth']:>9}  {a['depth']:>10}  "
+            f"{b['count_1q']:>6}  {a['count_1q']:>7}  "
             f"{b['count_2q']:>6}  {a['count_2q']:>7}  "
             f"{b['scalarized']:>10.2f}  {a['scalarized']:>10.2f}  "
-            f"{report['totals']['total_seconds']:>8.3f}  {wall:>8.2f}"
+            f"{report['totals']['total_seconds']:>8.3f}  {wall:>8.2f}  "
+            f"{ratio:>7.3f}x"
         )
 
     print("=" * table_width)
