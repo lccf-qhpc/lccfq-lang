@@ -18,7 +18,7 @@ def quantum_teleportation():
 
     :return: nothing
     """
-    qpu = QPU(filename="config/default.toml", last_pass="transpiled")
+    qpu = QPU(filename="config/natsim.toml", last_pass="executed")
     qreg = qpu.qregister(3)
     creg = CRegister(2)
 
@@ -48,25 +48,6 @@ def quantum_teleportation():
     freqs = creg.frequencies()
     corrected = postprocess(freqs)
     print(corrected)
-
-    tests = {}
-
-    with Test(qreg, tests, qpu) as t:
-        t >> qpu.isa.resfreq(tgs=[0], params=[10.0, 3.42, 3.44, 0.01], shots=300)
-        t >> qpu.isa.x(tg=2, shots=1000)
-        t >> qpu.isa.powrab(tgs=[0], params=[-0.4, 0.4, 20.0E-3], shots=300) # 1 unit = 1 us
-
-    for k, v in tests.items():
-        print(f"test {k}: {v}")
-
-    # What should we see?
-    # tests =
-    # {
-    #   0: { "rfreq": 3.5, "snr": 0.94}
-    #   1: { "0": 0.25, "1": 0.75, "error": 0.12}
-    #   2: { "amp": 2.3, "freq": 0.4, "maxgain": 0.1, "snr": 0.23}
-    # }
-
 
 
 def postprocess(freqs: dict) -> dict:

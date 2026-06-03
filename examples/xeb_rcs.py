@@ -97,7 +97,7 @@ def xeb_rcs(n_qubits=4, depth=20, shots=1000):
     :param shots: number of shots
     :return:
     """
-    qpu = QPU(filename="config/default.toml")
+    qpu = QPU(filename="config/natsim.toml", last_pass="executed")
     qreg = qpu.qregister(n_qubits)
     creg = CRegister(n_qubits)
 
@@ -118,3 +118,6 @@ def xeb_rcs(n_qubits=4, depth=20, shots=1000):
 
     print("Ideal circuit frequencies:", result)
     print("XEB fidelity:", fidelity)
+
+if __name__ == "__main__":
+    xeb_rcs()

@@ -14,7 +14,7 @@ from lccfq_lang import QPU, CRegister, Circuit
 
 def bell_state():
     # Define the qpu and registers to use
-    qpu = QPU(filename="config/default.toml")
+    qpu = QPU(filename="config/natsim.toml", last_pass="executed")
     qreg = qpu.qregister(2)
     creg = CRegister(size=2)
 

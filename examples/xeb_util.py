@@ -49,7 +49,11 @@ class XEBSimulator:
         :return: resulting state
         """
         dim = 2 ** n_qubits
-        new_state = np.copy(state)
+        # Seed with zeros: writing the source amplitude into its destination
+        # for every i is exhaustive and non-overlapping (the control-set
+        # subspace is a bijection under target-bit flip; the control-zero
+        # subspace is identity). Starting from a copy would double-count.
+        new_state = np.zeros(dim, dtype=complex)
 
         for i in range(dim):
             b = format(i, f"0{n_qubits}b")
@@ -59,7 +63,6 @@ class XEBSimulator:
                 flipped[tbit] = '0' if b[tbit] == '1' else '1'
                 j = int("".join(flipped), 2)
                 new_state[j] += state[i]
-                new_state[i] = 0
             else:
                 new_state[i] += state[i]
 

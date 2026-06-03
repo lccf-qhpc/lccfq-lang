@@ -244,9 +244,22 @@ def main() -> None:
             "vchain mode."
         ),
     )
+    p.add_argument(
+        "--last-pass", type=str, default="transpiled",
+        choices=[
+            "parsed", "mapped", "swapped", "expanded",
+            "arch_optimized", "transpiled", "mach_optimized", "executed",
+        ],
+        help=(
+            "Pipeline terminator. Default 'transpiled' runs the compiler "
+            "passes only; 'executed' additionally submits the transpiled "
+            "circuit to the backend (gRPC server in [network]) at each "
+            "opt level and absorbs the result into the classical register."
+        ),
+    )
     args = p.parse_args()
 
-    qpu = QPU(filename=args.config)
+    qpu = QPU(filename=args.config, last_pass=args.last_pass)
 
     validate_configuration(
         qpu, args.n_qubits, args.marked_state, args.mc_mode, args.workspace,
