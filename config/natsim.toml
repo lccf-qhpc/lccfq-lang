@@ -1,0 +1,18 @@
+[qpu]
+name = "pfaff_v1"
+location = "natsim (local 10-qubit linear simulator)"
+qubit_count = 10
+topology = "linear"
+qubits = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+exclusions = []
+couplings = [
+    [0, 1], [1, 2], [2, 3], [3, 4], [4, 5],
+    [5, 6], [6, 7], [7, 8], [8, 9],
+]
+
+[network]
+username = "demo"
+address = "127.0.0.1"
+port = 50053
+client_cert_dir = "/tmp/smoke-certs/clients"
+server_cert = "/tmp/smoke-certs/ca.crt"
