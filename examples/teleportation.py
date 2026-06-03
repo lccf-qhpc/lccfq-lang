@@ -53,18 +53,24 @@ def quantum_teleportation():
 def postprocess(freqs: dict) -> dict:
     """Post-processing code to apply corrections to Bob's qubit.
 
-    :param freqs: frequencies returned after successful quantum teleportation protocol
-    :return: corrected frequencies after postprocessing
-    """
-    corrected = {"0": 0, "1": 0}
+    The backend returns one bit per QPU qubit, so outcome keys are
+    qubit_count characters wide (10 for natsim.toml), not 3. Qubit 0 is
+    the rightmost (LSB) character, so the active bits for this circuit
+    are the last three characters: q2 q1 q0. Values are probabilities
+    summing to 1.0, not integer shot counts.
 
-    for outcome, count in freqs.items():
-        if len(outcome) != 3:
+    :param freqs: probability dictionary returned by `creg.frequencies()`
+    :return: corrected probability distribution on Bob's qubit
+    """
+    corrected = {"0": 0.0, "1": 0.0}
+
+    for outcome, prob in freqs.items():
+        if len(outcome) < 3:
             continue
 
-        q2_bit = int(outcome[0])
-        c1 = int(outcome[1])
-        c0 = int(outcome[2])
+        q2_bit = int(outcome[-3])
+        c1 = int(outcome[-2])
+        c0 = int(outcome[-1])
         result = q2_bit
 
         # c1 == 1 -> X(outcome)
@@ -75,7 +81,7 @@ def postprocess(freqs: dict) -> dict:
         if c0 == 1:
             result ^= 1
 
-        corrected[str(result)] += count
+        corrected[str(result)] += prob
 
     return corrected
 
