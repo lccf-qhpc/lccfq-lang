@@ -297,11 +297,22 @@ class XYiSW(Transpiler):
                 tq = instruction.control_qubits
                 cq = None
             elif route == "*":
-                tq = instruction.target_qubits
-                cq = instruction.control_qubits
+                # Native 2q gate (sqiswap): the backend wire contract
+                # (owned by lccfq-backend) requires both physical qubits in
+                # target_qubits with empty control_qubits. Order: control
+                # as LSB (qubits[0]), target as MSB (qubits[1]), matching
+                # the (target=MSB, control=LSB) basis used in _CX_ANGLES /
+                # _SWAP_ANGLES decompositions above. sqiswap is symmetric,
+                # so swapping the order changes nothing operator-wise.
+                tq = list(instruction.control_qubits or []) + list(instruction.target_qubits or [])
+                cq = []
             elif route == "+":
-                tq = instruction.control_qubits
-                cq = instruction.target_qubits
+                # Reverse-ordered native 2q gate: target first (LSB), then
+                # control (MSB). Same flatten-into-target_qubits convention
+                # as "*"; kept available for any decomposition that needs
+                # the swapped basis.
+                tq = list(instruction.target_qubits or []) + list(instruction.control_qubits or [])
+                cq = []
             else:
                 raise ValueError(f"Unsupported routing directive: {route}")
 

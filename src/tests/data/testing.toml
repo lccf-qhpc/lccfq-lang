@@ -8,5 +8,8 @@ exclusions = []
 couplings = [[0,1], [1,2], [2,3]]
 
 [network]
-ip = "192.168.1.10"
+address = "192.168.1.10"
 port = 5000
+username = "test"
+client_cert_dir = "/tmp"
+server_cert = "/tmp"
